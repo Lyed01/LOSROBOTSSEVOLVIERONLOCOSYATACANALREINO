@@ -6,8 +6,8 @@ namespace ProyectoSDL2.Game.Entities
     // Enemigo veloz: +70% velocidad, -40% vida, vale más monedas
     public class DroneEnemy : Enemy
     {
-        public DroneEnemy(List<Vector2> waypoints, Image sheet)
-            : base(waypoints, sheet)
+        public DroneEnemy(List<Vector2> waypoints, Image[] frames)
+            : base(waypoints, frames)
         {
             Health         = 60;
             Velocidad      = 102f;   // 60 * 1.7

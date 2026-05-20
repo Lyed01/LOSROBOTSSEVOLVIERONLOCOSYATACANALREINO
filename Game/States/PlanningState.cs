@@ -4,11 +4,12 @@ using ProyectoSDL2.Game.Factories;
 using ProyectoSDL2.Game.Managers;
 using System.Collections.Generic;
 using ProyectoSDL2.Game.Interfaces;
-
+using SDL2;
 namespace ProyectoSDL2.Game.States
 {
     public class PlanningState : IGameState
     {
+        private Image _fondo;
         private StateManager _sm;
         private Map _map;
         private List<Tower> _torres;
@@ -28,7 +29,7 @@ namespace ProyectoSDL2.Game.States
         private int _seleccion = 0;
 
         // Anti-repetición
-        private float _timer = 0f;
+        private float _timer = 0.3f;
         private const float DELAY = 0.15f;
 
         public PlanningState(StateManager sm, Map map = null, List<Tower> torres = null)
@@ -40,6 +41,7 @@ namespace ProyectoSDL2.Game.States
 
         public void Enter()
         {
+            _fondo = Engine.Engine.LoadImage("Assets/fondo.png");
             _fontHud = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 20);
             _imgArcherTower = Engine.Engine.LoadImage("Assets/sprites/archer_tower.png");
             _imgAxeTower = Engine.Engine.LoadImage("Assets/sprites/axe_tower.png");
@@ -90,7 +92,8 @@ namespace ProyectoSDL2.Game.States
         public void Render()
         {
             Engine.Engine.Clear();
-
+            SDL.SDL_Rect destFondo = new SDL.SDL_Rect { x = 0, y = 0, w = 1024, h = 576 };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, _fondo.Pointer, IntPtr.Zero, ref destFondo);
             foreach (var t in _torres) t.Render();
 
             // Torre fantasma en el cursor
@@ -110,10 +113,10 @@ namespace ProyectoSDL2.Game.States
 
             // HUD
             string torre = _seleccion == 0 ? $"Arquero ({COSTO_ARCHER})" : $"Hachero ({COSTO_AXE})";
-            Engine.Engine.DrawText($"Monedas: {GameManager.Instance.Monedas}", 10, 10, 255, 215, 0, _fontHud);
-            Engine.Engine.DrawText($"Torre: {torre}", 10, 40, 255, 255, 255, _fontHud);
-            Engine.Engine.DrawText("Flechas: mover   Q/E: torre   ENTER: colocar   ESPACIO: comenzar",
-                                                                                10, 70, 160, 160, 160, _fontHud);
+          Engine.Engine.DrawText($"Monedas: {GameManager.Instance.Monedas}", 10, 586, 255, 215, 0, _fontHud);
+Engine.Engine.DrawText($"Torre: {torre}", 10, 616, 255, 255, 255, _fontHud);
+Engine.Engine.DrawText("Flechas: mover   Q/E: torre   ENTER: colocar   ESPACIO: comenzar",
+                        10, 646, 160, 160, 160, _fontHud);
 
             Engine.Engine.Show();
         }

@@ -4,22 +4,24 @@ using ProyectoSDL2.Game.Factories;
 using ProyectoSDL2.Game.Interfaces;
 using ProyectoSDL2.Game.Managers;
 using System.Collections.Generic;
-
+using SDL2;
 namespace ProyectoSDL2.Game.States
 {
     public class CombatState : IGameState
     {
+        private Image _fondo;
         private StateManager _sm;
         private Map          _map;
         private List<Tower>  _torres;
         private List<Enemy>  _enemies = new List<Enemy>();
         private Font         _fontHud;
-        private Image        _imgSoldier;
-        private Image        _imgDrone;
-
+        private Image[] _imgSoldier;
+        private Image[] _imgDrone;
+        private Castle _castle; 
         // Spawn
         private float _spawnTimer    = 0f;
         private float _spawnInterval = 2.5f;
+
         private int   _enemigosSpawneados = 0;
         private int   _enemigosTotal      = 8;
         private int   _enemigosEliminados = 0;
@@ -33,9 +35,24 @@ namespace ProyectoSDL2.Game.States
 
         public void Enter()
         {
-            _fontHud    = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 22);
-            _imgSoldier = Engine.Engine.LoadImage("Assets/sprites/soldier.png");
-            _imgDrone   = Engine.Engine.LoadImage("Assets/sprites/drone.png");
+            _fondo = Engine.Engine.LoadImage("Assets/fondo.png");
+            _fontHud = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 22);
+            _castle = new Castle(15 * 64, 0, Engine.Engine.LoadImage("Assets/sprites/castle.png"));
+            _imgSoldier = new Image[]
+            {
+                Engine.Engine.LoadImage("Assets/enemy/0.png"),
+                Engine.Engine.LoadImage("Assets/enemy/1.png"),
+                Engine.Engine.LoadImage("Assets/enemy/2.png"),
+                Engine.Engine.LoadImage("Assets/enemy/3.png"),
+            };
+            _imgDrone = new Image[]
+            {
+                Engine.Engine.LoadImage("Assets/enemy/0.png"),
+                Engine.Engine.LoadImage("Assets/enemy/1.png"),
+                Engine.Engine.LoadImage("Assets/enemy/2.png"),
+                Engine.Engine.LoadImage("Assets/enemy/3.png"),
+            };
+
 
             // Suscribirse a eventos del GameManager
             GameManager.Instance.OnEnemyDied  += OnEnemyDied;
@@ -83,6 +100,9 @@ namespace ProyectoSDL2.Game.States
         {
             Engine.Engine.Clear();
 
+            SDL.SDL_Rect destFondo = new SDL.SDL_Rect { x = 0, y = 0, w = 1024, h = 576 };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, _fondo.Pointer, IntPtr.Zero, ref destFondo);
+
             foreach (var t in _torres)  t.Render();
             foreach (var e in _enemies) e.Render();
 
@@ -91,7 +111,7 @@ namespace ProyectoSDL2.Game.States
             Engine.Engine.DrawText($"Castillo: {GameManager.Instance.Hits}/3",  10,  40, 255, 100, 100, _fontHud);
             Engine.Engine.DrawText($"Oleada: {GameManager.Instance.OleadaActual}/{GameManager.Instance.TotalOleadas}", 10, 70, 255, 255, 255, _fontHud);
             Engine.Engine.DrawText($"Enemigos: {_enemigosEliminados}/{_enemigosTotal}", 10, 100, 200, 200, 200, _fontHud);
-
+            _castle.Render();
             Engine.Engine.Show();
         }
 
@@ -107,8 +127,8 @@ namespace ProyectoSDL2.Game.States
         {
             // Alternar entre soldado y drone cada 3 spawns
             EnemyType tipo   = (_enemigosSpawneados % 3 == 2) ? EnemyType.Drone : EnemyType.Soldier;
-            Image     sheet  = tipo == EnemyType.Drone ? _imgDrone : _imgSoldier;
-            Enemy     enemy  = EnemyFactory.Create(tipo, _map.Waypoints, sheet);
+            Image[] frames = tipo == EnemyType.Drone ? _imgDrone : _imgSoldier;
+            Enemy enemy = EnemyFactory.Create(tipo, _map.Waypoints, frames);
             _enemies.Add(enemy);
             _enemigosSpawneados++;
         }

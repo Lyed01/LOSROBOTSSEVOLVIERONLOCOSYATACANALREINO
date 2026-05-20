@@ -1,7 +1,7 @@
 using ProyectoSDL2.Engine;
 using ProyectoSDL2.Game.Interfaces;
 using ProyectoSDL2.Game.Managers;
-
+using SDL2;
 namespace ProyectoSDL2.Game.States
 {
     public class MenuState : IGameState

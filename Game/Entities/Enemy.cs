@@ -3,6 +3,7 @@ using ProyectoSDL2.Game.Interfaces;
 using ProyectoSDL2.Game.Managers;
 using System;
 using System.Collections.Generic;
+using SDL2;
 
 namespace ProyectoSDL2.Game.Entities
 {
@@ -27,7 +28,7 @@ namespace ProyectoSDL2.Game.Entities
         private   const float   WAYPOINT_THRESHOLD = 6f;
 
         // ── Animación ──────────────────────────────────────────────────────────
-        protected Image  spriteSheet;
+        protected Image[]  spriteSheet;
         protected int    frameActual   = 0;
         protected float  timerFrame    = 0f;
         protected float  intervalFrame = 0.12f;  // segundos por frame
@@ -38,10 +39,10 @@ namespace ProyectoSDL2.Game.Entities
         // ── Evento ────────────────────────────────────────────────────────────
         public event Action OnDied;
 
-        protected Enemy(List<Vector2> waypoints, Image sheet)
+        protected Enemy(List<Vector2> waypoints, Image[] frames)
         {
-            this.waypoints  = waypoints;
-            this.spriteSheet = sheet;
+            this.waypoints = waypoints;
+            this.spriteSheet = frames;
             if (waypoints.Count > 0)
                 Position = waypoints[0];
         }
@@ -99,10 +100,14 @@ namespace ProyectoSDL2.Game.Entities
         public virtual void Render()
         {
             if (!IsAlive) return;
-            // Se usa SDL_RenderCopy con sourceRect del frame actual
-            int srcX = frameActual * frameW;
-            Engine.Engine.Draw(spriteSheet, (int)Position.X, (int)Position.Y);
-            // TODO: cuando tengan spritesheet real, reemplazar con el overload de src rect
+            SDL.SDL_Rect dest = new SDL.SDL_Rect
+            {
+                x = (int)Position.X,
+                y = (int)Position.Y,
+                w = 64,
+                h = 64
+            };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, spriteSheet[frameActual].Pointer, IntPtr.Zero, ref dest);
         }
 
         // ── Colisión AABB ─────────────────────────────────────────────────────

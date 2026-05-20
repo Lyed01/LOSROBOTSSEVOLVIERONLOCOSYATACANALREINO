@@ -9,12 +9,12 @@ namespace ProyectoSDL2.Game.Factories
 
     public static class EnemyFactory
     {
-        public static Enemy Create(EnemyType type, List<Vector2> waypoints, Image sheet)
+        public static Enemy Create(EnemyType type, List<Vector2> waypoints, Image[] frames)
         {
             return type switch
             {
-                EnemyType.Soldier => new SoldierEnemy(waypoints, sheet),
-                EnemyType.Drone   => new DroneEnemy(waypoints, sheet),
+                EnemyType.Soldier => new SoldierEnemy(waypoints, frames),
+                EnemyType.Drone => new DroneEnemy(waypoints, frames),
                 _ => throw new ArgumentException($"Tipo de enemigo desconocido: {type}")
             };
         }

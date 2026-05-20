@@ -1,7 +1,7 @@
 using ProyectoSDL2.Engine;
 using ProyectoSDL2.Game.Interfaces;
 using ProyectoSDL2.Game.Managers;
-
+using SDL2;
 namespace ProyectoSDL2.Game.States
 {
     public class VictoryState : IGameState
@@ -9,11 +9,12 @@ namespace ProyectoSDL2.Game.States
         private StateManager _sm;
         private Font _fontGrande;
         private Font _fontChica;
-
+        private Image _fondo;
         public VictoryState(StateManager sm) => _sm = sm;
 
         public void Enter()
         {
+            _fondo = Engine.Engine.LoadImage("Assets/PantallaDerrota.png");
             _fontGrande = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 56);
             _fontChica  = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 26);
         }
@@ -31,6 +32,9 @@ namespace ProyectoSDL2.Game.States
         public void Render()
         {
             Engine.Engine.Clear();
+            Engine.Engine.Clear();
+            SDL.SDL_Rect dest = new SDL.SDL_Rect { x = 0, y = 0, w = 1024, h = 768 };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, _fondo.Pointer, IntPtr.Zero, ref dest);
             Engine.Engine.DrawText("¡VICTORIA!",                     330, 260, 100, 255, 100, _fontGrande);
             Engine.Engine.DrawText($"Puntaje: {GameManager.Instance.PuntajeAcumulado}", 390, 360, 255, 215,   0, _fontChica);
             Engine.Engine.DrawText($"Monedas: {GameManager.Instance.Monedas}",          390, 400, 255, 215,   0, _fontChica);

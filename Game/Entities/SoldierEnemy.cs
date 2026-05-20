@@ -6,8 +6,8 @@ namespace ProyectoSDL2.Game.Entities
     // Enemigo estándar: velocidad y vida base
     public class SoldierEnemy : Enemy
     {
-        public SoldierEnemy(List<Vector2> waypoints, Image sheet)
-            : base(waypoints, sheet)
+        public SoldierEnemy(List<Vector2> waypoints, Image[] frames)
+            : base(waypoints, frames)
         {
             Health         = 100;
             Velocidad      = 60f;

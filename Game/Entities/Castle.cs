@@ -1,6 +1,6 @@
 using ProyectoSDL2.Engine;
 using ProyectoSDL2.Game.Interfaces;
-
+using SDL2;
 namespace ProyectoSDL2.Game.Entities
 {
     public class Castle : IDamageable
@@ -26,7 +26,8 @@ namespace ProyectoSDL2.Game.Entities
 
         public void Render()
         {
-            Engine.Engine.Draw(_sprite, X, Y);
+            SDL.SDL_Rect dest = new SDL.SDL_Rect { x = X, y = Y, w = 192, h = 192 };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, _sprite.Pointer, IntPtr.Zero, ref dest);
         }
     }
 }
