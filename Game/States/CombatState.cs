@@ -34,8 +34,8 @@ namespace ProyectoSDL2.Game.States
         public void Enter()
         {
             _fontHud    = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 22);
-            _imgSoldier = Engine.Engine.LoadImage("Assets/Sprites/soldier.png");
-            _imgDrone   = Engine.Engine.LoadImage("Assets/Sprites/drone.png");
+            _imgSoldier = Engine.Engine.LoadImage("Assets/sprites/soldier.png");
+            _imgDrone   = Engine.Engine.LoadImage("Assets/sprites/drone.png");
 
             // Suscribirse a eventos del GameManager
             GameManager.Instance.OnEnemyDied  += OnEnemyDied;

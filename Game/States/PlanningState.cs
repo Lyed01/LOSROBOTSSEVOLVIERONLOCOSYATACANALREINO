@@ -41,8 +41,8 @@ namespace ProyectoSDL2.Game.States
         public void Enter()
         {
             _fontHud = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 20);
-            _imgArcherTower = Engine.Engine.LoadImage("Assets/Sprites/archer_tower.png");
-            _imgAxeTower = Engine.Engine.LoadImage("Assets/Sprites/axe_tower.png");
+            _imgArcherTower = Engine.Engine.LoadImage("Assets/sprites/archer_tower.png");
+            _imgAxeTower = Engine.Engine.LoadImage("Assets/sprites/axe_tower.png");
         }
 
         public void Update(float dt)
