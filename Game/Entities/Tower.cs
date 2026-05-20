@@ -2,7 +2,7 @@ using ProyectoSDL2.Engine;
 using ProyectoSDL2.Game.Interfaces;
 using System;
 using System.Collections.Generic;
-
+using SDL2;
 namespace ProyectoSDL2.Game.Entities
 {
     public abstract class Tower : IAttacker, IAnimatable
@@ -89,7 +89,8 @@ namespace ProyectoSDL2.Game.Entities
         // ── Render ────────────────────────────────────────────────────────────
         public virtual void Render()
         {
-            Engine.Engine.Draw(spriteSheet, X, Y);
+            SDL.SDL_Rect dest = new SDL.SDL_Rect { x = X, y = Y, w = 128, h = 128 };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, spriteSheet.Pointer, IntPtr.Zero, ref dest);
         }
     }
 }

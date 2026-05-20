@@ -100,7 +100,11 @@ namespace ProyectoSDL2.Game.States
             int cx = _cursorCol * TILE;
             int cy = _cursorRow * TILE;
             Image ghost = _seleccion == 0 ? _imgArcherTower : _imgAxeTower;
-            Engine.Engine.Draw(ghost, cx, cy);
+
+            SDL.SDL_Rect destGhost = new SDL.SDL_Rect { x = cx, y = cy, w = 64, h = 64 };
+
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, ghost.Pointer, IntPtr.Zero, ref destGhost);
+
 
             // Borde del cursor: verde=válido, rojo=inválido
             bool valido = _map.CanPlaceTower(cx, cy);
@@ -114,9 +118,8 @@ namespace ProyectoSDL2.Game.States
             // HUD
             string torre = _seleccion == 0 ? $"Arquero ({COSTO_ARCHER})" : $"Hachero ({COSTO_AXE})";
           Engine.Engine.DrawText($"Monedas: {GameManager.Instance.Monedas}", 10, 586, 255, 215, 0, _fontHud);
-Engine.Engine.DrawText($"Torre: {torre}", 10, 616, 255, 255, 255, _fontHud);
-Engine.Engine.DrawText("Flechas: mover   Q/E: torre   ENTER: colocar   ESPACIO: comenzar",
-                        10, 646, 160, 160, 160, _fontHud);
+          Engine.Engine.DrawText($"Torre: {torre}", 10, 616, 255, 255, 255, _fontHud);
+          Engine.Engine.DrawText("Flechas: mover   Q/E: torre   ENTER: colocar   ESPACIO: comenzar", 10, 646, 160, 160, 160, _fontHud);
 
             Engine.Engine.Show();
         }
