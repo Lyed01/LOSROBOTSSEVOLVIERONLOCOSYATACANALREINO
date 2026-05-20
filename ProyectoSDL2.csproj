@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<RootNamespace>ProyectoSDL2.Engine</RootNamespace>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- Copia todo lo que esté en assets\ al output, sin duplicar -->
+		<Content Include="assets\**\*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Sayers.SDL2.Core" Version="1.0.10" />
+	</ItemGroup>
+
+</Project>
