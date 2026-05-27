@@ -8,11 +8,11 @@ namespace ProyectoSDL2.Game.Factories
 
     public static class TowerFactory
     {
-        public static Tower Create(TowerType type, int x, int y, Image sheet)
+        public static Tower Create(TowerType type, int x, int y, Image sheet, Image bulletSheet = null)
         {
             return type switch
             {
-                TowerType.Archer => new ArcherTower(x, y, sheet),
+                TowerType.Archer => new ArcherTower(x, y, sheet, bulletSheet),
                 TowerType.Axe    => new AxeTower(x, y, sheet),
                 _ => throw new ArgumentException($"Tipo de torre desconocido: {type}")
             };

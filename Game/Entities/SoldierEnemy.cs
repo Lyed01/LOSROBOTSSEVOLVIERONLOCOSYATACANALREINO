@@ -9,9 +9,9 @@ namespace ProyectoSDL2.Game.Entities
         public SoldierEnemy(List<Vector2> waypoints, Image[] frames)
             : base(waypoints, frames)
         {
-            Health         = 100;
+            Health         = 200;
             Velocidad      = 60f;
-            MonedasAlMorir = 10;
+            MonedasAlMorir = 2;
             totalFrames    = 4;
             intervalFrame  = 0.12f;
         }

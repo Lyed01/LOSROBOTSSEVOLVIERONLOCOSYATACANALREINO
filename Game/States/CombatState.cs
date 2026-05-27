@@ -14,6 +14,7 @@ namespace ProyectoSDL2.Game.States
         private Map          _map;
         private List<Tower>  _torres;
         private List<Enemy>  _enemies = new List<Enemy>();
+        private List<Bullet> _bullets = new List<Bullet>();
         private Font         _fontHud;
         private Image[] _imgSoldier;
         private Image[] _imgDrone;
@@ -23,7 +24,7 @@ namespace ProyectoSDL2.Game.States
         private float _spawnInterval = 2.5f;
 
         private int   _enemigosSpawneados = 0;
-        private int   _enemigosTotal      = 8;
+        private int   _enemigosTotal      = 20;
         private int   _enemigosEliminados = 0;
 
         public CombatState(StateManager sm, Map map, List<Tower> torres)
@@ -40,19 +41,21 @@ namespace ProyectoSDL2.Game.States
             _castle = new Castle(15 * 64, 0, Engine.Engine.LoadImage("Assets/sprites/castle.png"));
             _imgSoldier = new Image[]
             {
-                Engine.Engine.LoadImage("Assets/enemy/0.png"),
-                Engine.Engine.LoadImage("Assets/enemy/1.png"),
-                Engine.Engine.LoadImage("Assets/enemy/2.png"),
-                Engine.Engine.LoadImage("Assets/enemy/3.png"),
+                Engine.Engine.LoadImage("Assets/TankEnemy/0.png"),
+                Engine.Engine.LoadImage("Assets/TankEnemy/1.png"),
+                Engine.Engine.LoadImage("Assets/TankEnemy/2.png"),
+                Engine.Engine.LoadImage("Assets/TankEnemy/3.png"),
             };
             _imgDrone = new Image[]
             {
-                Engine.Engine.LoadImage("Assets/enemy/0.png"),
-                Engine.Engine.LoadImage("Assets/enemy/1.png"),
-                Engine.Engine.LoadImage("Assets/enemy/2.png"),
-                Engine.Engine.LoadImage("Assets/enemy/3.png"),
+                Engine.Engine.LoadImage("Assets/FastEnemy/0.png"),
+                Engine.Engine.LoadImage("Assets/FastEnemy/1.png"),
+                Engine.Engine.LoadImage("Assets/FastEnemy/2.png"),
+                Engine.Engine.LoadImage("Assets/FastEnemy/3.png"),
             };
 
+
+            GameManager.Instance.SetState(GameState.Combat);
 
             // Suscribirse a eventos del GameManager
             GameManager.Instance.OnEnemyDied  += OnEnemyDied;
@@ -76,9 +79,14 @@ namespace ProyectoSDL2.Game.States
             foreach (var e in _enemies)
                 e.Update(dt);
 
-            // Actualizar torres (buscan y atacan enemigos)
+            // Actualizar torres (buscan, disparan y atacan enemigos)
             foreach (var t in _torres)
-                t.Update(dt, _enemies);
+                t.Update(dt, _enemies, _bullets);
+
+            // Actualizar balas
+            foreach (var b in _bullets)
+                b.Update(dt);
+            _bullets.RemoveAll(b => !b.IsAlive);
 
             // Limpiar muertos
             _enemies.RemoveAll(e => !e.IsAlive);
@@ -105,6 +113,7 @@ namespace ProyectoSDL2.Game.States
 
             foreach (var t in _torres)  t.Render();
             foreach (var e in _enemies) e.Render();
+            foreach (var b in _bullets) b.Render();
 
             // HUD
             Engine.Engine.DrawText($"Monedas: {GameManager.Instance.Monedas}",  10,  10, 255, 215,   0, _fontHud);

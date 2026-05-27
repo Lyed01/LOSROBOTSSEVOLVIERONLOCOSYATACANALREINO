@@ -1,0 +1,746 @@
+================================================================================
+  LOS ROBOTS SE VOLVIERON LOCOS Y ATACAN AL REINO
+  Documentacion completa del proyecto
+  Paradigmas de Programacion 2026
+================================================================================
+
+--------------------------------------------------------------------------------
+1. DESCRIPCION GENERAL
+--------------------------------------------------------------------------------
+
+Juego de defensa de torres (Tower Defense) desarrollado en C# con SDL2.
+El jugador debe defender el castillo colocando torres que disparan a oleadas
+de robots enemigos que avanzan por un camino prefijado en el mapa.
+
+Tecnologias:
+  - Lenguaje:    C# (.NET 9)
+  - Graficos:    SDL2 + SDL2_image
+  - Texto:       SDL2_ttf
+  - Audio:       SDL2_mixer
+  - Libreria:    Sayers.SDL2.Core 1.0.11
+
+Resolucion de pantalla: 1024 x 768 px
+Tamano de casilla (tile): 64 x 64 px
+Grid del mapa: 16 columnas x 9 filas
+
+
+--------------------------------------------------------------------------------
+2. FLUJO DEL JUEGO
+--------------------------------------------------------------------------------
+
+  [MenuState]
+      |
+      | ENTER / Click
+      v
+  [PlanningState]  <---------+
+      |                      |
+      | ESPACIO               |
+      v                      |
+  [CombatState]              |
+      |                      |
+      |-- Oleada completa --> GameManager.WaveComplete()
+      |       |                       |
+      |       | Quedan oleadas        | Ultima oleada
+      |       v                       v
+      |  [PlanningState]         [VictoryState]
+      |
+      |-- Castillo destruido --> [DefeatState]
+
+Desde VictoryState y DefeatState, ENTER vuelve al MenuState.
+
+Estados del enum GameState:
+  Menu, Planning, Combat, Victory, Defeat, SkillTree (reservado para futuro)
+
+
+--------------------------------------------------------------------------------
+3. ARQUITECTURA - PATRONES DE DISENO
+--------------------------------------------------------------------------------
+
+3.1 STATE (Patron de Estado)
+-----------------------------
+Controla que pantalla/logica esta activa en cada momento.
+
+Participantes:
+  - IGameState          : interfaz que define el contrato de cada estado
+  - StateManager        : contexto que mantiene el estado actual
+  - MenuState           : estado del menu principal
+  - PlanningState       : estado de colocacion de torres
+  - CombatState         : estado de combate con oleadas
+  - VictoryState        : estado de pantalla de victoria
+  - DefeatState         : estado de pantalla de derrota
+
+Flujo: StateManager.ChangeState(nuevoEstado) llama Exit() en el estado
+saliente y Enter() en el entrante. Update() y Render() se delegan al
+estado activo en cada frame del game loop.
+
+
+3.2 SINGLETON (Patron Singleton)
+----------------------------------
+GameManager usa Singleton con doble verificacion (double-checked locking)
+para garantizar una unica instancia global que gestiona el estado de la
+partida (monedas, oleada, vidas del castillo).
+
+  private static GameManager _instance;
+  private static readonly object _lock = new object();
+
+
+3.3 FACTORY METHOD (Patron de Fabrica)
+----------------------------------------
+Dos fabricas encapsulan la creacion de entidades:
+
+  TowerFactory.Create(TowerType, x, y, sheet, bulletSheet)
+    --> ArcherTower o AxeTower segun el tipo
+
+  EnemyFactory.Create(EnemyType, waypoints, frames)
+    --> SoldierEnemy o DroneEnemy segun el tipo
+
+Ventaja: el codigo cliente (PlanningState, CombatState) no conoce
+las clases concretas, solo trabaja con Tower y Enemy.
+
+
+3.4 TEMPLATE METHOD (Metodo Plantilla)
+----------------------------------------
+La clase abstracta Tower define el algoritmo general de Update():
+  1. Acumular tiempo de ataque
+  2. Buscar enemigo en rango
+  3. Si hay objetivo: llamar Attack() + Shoot()
+  4. Llamar UpdateAnimation()
+
+Las subclases pueden sobreescribir pasos especificos:
+  - ArcherTower: usa el Shoot() heredado (dispara Bullet)
+  - AxeTower:    sobreescribe Update() completo para dano en area instantaneo
+
+Lo mismo aplica a Enemy: la clase abstracta implementa el movimiento
+por waypoints y UpdateAnimation(), y las subclases solo configuran stats.
+
+
+3.5 OBSERVER (Patron Observador)
+----------------------------------
+GameManager expone eventos de C# que otros objetos pueden suscribirse:
+
+  OnEnemyDied  : disparado cuando un enemigo muere, argumento = monedas
+  OnCastleHit  : disparado cuando un enemigo llega al castillo
+  OnWaveComplete: disparado cuando se completa una oleada
+
+CombatState se suscribe en Enter() y se desuscribe en Exit(), evitando
+referencias colgantes entre oleadas.
+
+
+--------------------------------------------------------------------------------
+4. ESTRUCTURA DE ARCHIVOS
+--------------------------------------------------------------------------------
+
+ProyectoSDL2.csproj
+Program.cs
+|
++-- Engine/
+|   +-- Engine.cs      (nucleo grafico y de input)
+|   +-- Image.cs       (wrapper de textura SDL2)
+|   +-- Font.cs        (wrapper de fuente SDL2_ttf)
+|   +-- Sound.cs       (wrapper de audio SDL2_mixer)
+|
++-- Game/
+    +-- GameState.cs   (enum de estados del juego)
+    +-- Vector2.cs     (matematica 2D)
+    +-- Map.cs         (mapa, waypoints, grid de ocupacion)
+    |
+    +-- Interfaces/
+    |   +-- IGameState.cs    (contrato de estado)
+    |   +-- IDamageable.cs   (contrato de entidad danable)
+    |   +-- IAttacker.cs     (contrato de entidad atacante)
+    |   +-- IAnimatable.cs   (contrato de entidad animable)
+    |
+    +-- Entities/
+    |   +-- Tower.cs         (clase base abstracta de torres)
+    |   +-- ArcherTower.cs   (torre arquera)
+    |   +-- AxeTower.cs      (torre hachera)
+    |   +-- Enemy.cs         (clase base abstracta de enemigos)
+    |   +-- SoldierEnemy.cs  (enemigo soldado)
+    |   +-- DroneEnemy.cs    (enemigo drone)
+    |   +-- Castle.cs        (castillo a defender)
+    |   +-- Bullet.cs        (proyectil de flecha)
+    |
+    +-- Factories/
+    |   +-- TowerFactory.cs  (fabrica de torres)
+    |   +-- EnemyFactory.cs  (fabrica de enemigos)
+    |
+    +-- Managers/
+    |   +-- GameManager.cs   (singleton de estado global)
+    |   +-- StateManager.cs  (gestor de estados del juego)
+    |
+    +-- States/
+        +-- MenuState.cs              (pantalla de inicio)
+        +-- PlanningState.cs          (colocacion de torres)
+        +-- CombatState.cs            (combate)
+        +-- VictoryAndDefeatState.cs  (victoria y derrota)
+
+
+--------------------------------------------------------------------------------
+5. INTERFACES
+--------------------------------------------------------------------------------
+
+IGameState  (Game/Interfaces/IGameState.cs)
+  Contrato que debe cumplir cada estado del juego.
+  Metodos:
+    void Enter()          : se llama al activar el estado (cargar recursos)
+    void Update(float dt) : logica del frame (dt = delta time en segundos)
+    void Render()         : dibujar el frame actual
+    void Exit()           : se llama al desactivar el estado (liberar subs)
+
+IDamageable  (Game/Interfaces/IDamageable.cs)
+  Contrato para entidades que pueden recibir dano.
+  Propiedades:
+    int  Health   : puntos de vida actuales
+    bool IsAlive  : verdadero si sigue vivo
+  Metodos:
+    void TakeDamage(int amount) : aplica dano y gestiona muerte
+
+IAttacker  (Game/Interfaces/IAttacker.cs)
+  Contrato para entidades que atacan.
+  Propiedades:
+    float Rango : alcance del ataque en pixeles
+    float Dano  : dano por ataque
+  Metodos:
+    void Attack() : ejecuta el ataque (hook para sonido/efectos)
+
+IAnimatable  (Game/Interfaces/IAnimatable.cs)
+  Contrato para entidades con animacion por frames.
+  Metodos:
+    void UpdateAnimation(float dt) : avanza el frame de animacion
+
+
+--------------------------------------------------------------------------------
+6. ENGINE (Motor Grafico)
+--------------------------------------------------------------------------------
+
+Engine.cs
+  Clase estatica que encapsula toda la interaccion con SDL2.
+  Responsabilidades:
+    - Inicializar SDL2, SDL2_image, SDL2_ttf y SDL2_mixer
+    - Crear la ventana y el renderer
+    - Limpiar y presentar el renderer (Clear / Show)
+    - Cargar imagenes y fuentes
+    - Detectar input de teclado (KeyPress via SDL_GetKeyboardState)
+    - Detectar clicks de raton (MouseClick via cola de eventos)
+    - Dibujar texto (DrawText, TextWidth)
+    - Dibujar imagenes con rotacion (Draw con angulo)
+    - Constantes de teclas: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
+      KEY_ESP, KEY_Q, KEY_E, KEY_ESC, MOUSE_LEFT, MOUSE_RIGHT
+
+  Metodos relevantes:
+    Initialize(w, h)        : inicia SDL y crea ventana de w x h px
+    Clear()                 : limpia el renderer con color celeste
+    Show()                  : presenta el renderer en pantalla
+    LoadImage(path)         : devuelve Image cargada desde archivo
+    LoadFont(path, size)    : devuelve Font cargada desde archivo
+    DrawText(txt,x,y,r,g,b,font) : renderiza texto en pantalla
+    TextWidth(txt, font)    : ancho en px del texto para centrado
+    KeyPress(keycode)       : true si la tecla esta presionada
+    MouseClick(btn,x,y)     : true si hubo click, devuelve posicion
+
+Image.cs
+  Wrapper sobre IntPtr de textura SDL2.
+  Constructor carga la textura via IMG_LoadTexture.
+  Si la imagen no existe llama Environment.Exit(4).
+  Propiedad:
+    IntPtr Pointer : puntero a la textura SDL2
+
+Font.cs
+  Wrapper sobre IntPtr de fuente TTF.
+  Constructor carga la fuente via TTF_OpenFont.
+  Si la fuente no existe llama Engine.ErrorFatal (exit 1).
+  Propiedad:
+    IntPtr pointer : puntero a la fuente SDL2_ttf
+
+Sound.cs
+  Wrapper sobre SDL2_mixer para musica de fondo.
+  Metodos:
+    Play()        : reproduce una vez
+    PlayLooping() : reproduce en bucle (musica de fondo)
+    Stop()        : detiene la reproduccion
+
+
+--------------------------------------------------------------------------------
+7. UTILIDADES DE JUEGO
+--------------------------------------------------------------------------------
+
+Vector2  (Game/Vector2.cs)
+  Estructura (struct) de vector 2D con punto flotante.
+  Campos:  float X, float Y
+  Operadores: +, -, * (escalar)
+  Propiedades:
+    float Length : magnitud del vector
+  Metodos:
+    Normalized()          : vector unitario en la misma direccion
+    Distance(a, b)        : distancia euclidea entre dos puntos
+  Uso: posicion de enemigos, calculo de direccion de balas.
+
+GameState  (Game/GameState.cs)
+  Enum con los estados posibles del juego:
+    Menu      : pantalla de inicio
+    Planning  : colocacion de torres entre oleadas
+    Combat    : combate activo
+    Victory   : el jugador gano todas las oleadas
+    Defeat    : el castillo fue destruido
+    SkillTree : reservado para futura pantalla de mejoras
+
+
+--------------------------------------------------------------------------------
+8. MAPA (Map.cs)
+--------------------------------------------------------------------------------
+
+Responsabilidades:
+  - Definir los waypoints (puntos de paso) que siguen los enemigos
+  - Mantener un grid bool[16,9] de celdas ocupadas (camino + torres)
+  - Determinar si una celda puede recibir una torre
+  - Marcar celdas como ocupadas al colocar torres
+
+Constante:
+  TILE = 64  : tamano de cada celda en pixeles
+
+Waypoints:
+  Lista de Vector2 que define el recorrido del camino de izquierda
+  a derecha en zigzag hasta el castillo en la columna 15.
+  Al construir el mapa se marcan automaticamente todas las celdas
+  del camino como ocupadas para impedir colocar torres en ellas.
+
+Metodos publicos:
+  CanPlaceTower(pixelX, pixelY)  : true si la celda esta libre
+  OccupyTile(pixelX, pixelY)     : marca la celda como ocupada
+  SnapToGrid(pixelX, pixelY)     : ajusta coordenadas al grid
+
+
+--------------------------------------------------------------------------------
+9. ENTIDADES
+--------------------------------------------------------------------------------
+
+9.1 Tower  (abstract, Game/Entities/Tower.cs)
+----------------------------------------------
+Clase base de todas las torres. Implementa IAttacker e IAnimatable.
+
+Propiedades:
+  int X, Y        : posicion de la celda (esquina superior izquierda)
+  float Rango     : alcance del ataque en pixeles
+  float Dano      : dano por disparo
+  float cadencia  : ataques por segundo
+
+Campos protegidos:
+  Image spriteSheet  : sprite de la torre
+  Image _bulletImg   : sprite del proyectil (null para torres sin bala)
+  int frameActual    : frame actual de animacion
+  float timerFrame   : acumulador de tiempo de animacion
+  float intervalFrame: segundos entre frames
+  int totalFrames    : cantidad de frames de animacion
+  bool atacando      : true si la torre ataco en el frame actual
+
+Comportamiento (Update):
+  1. Acumula timerAtaque con dt
+  2. Si supera 1/cadencia segundos busca el primer enemigo en rango
+  3. Llama Attack() (hook para sonido/efectos)
+  4. Llama Shoot() para crear un proyectil
+  5. Resetea timerAtaque y avanza la animacion
+
+Shoot() (virtual):
+  Crea un Bullet desde el centro superior del sprite de la torre
+  apuntando al enemigo objetivo. Posicion de origen:
+    cx = X + TILE/2          (centro horizontal de la casilla)
+    cy = Y + TILE/2 - 128    (parte superior del sprite)
+
+Render() (virtual):
+  Dibuja el sprite de 128x128 px centrado sobre la casilla:
+    renderX = X + 32 - 64  (centrado horizontalmente)
+    renderY = Y + 32 - 128 (anclado por la base al centro del tile)
+
+
+9.2 ArcherTower  (Game/Entities/ArcherTower.cs)
+-------------------------------------------------
+Torre de arquero. Hereda de Tower.
+Stats:
+  Rango     = 200 px
+  Dano      = 20
+  Cadencia  = 1.5 ataques/segundo
+  Frames    = 2, intervalo = 0.15s
+Comportamiento: usa el Shoot() heredado, genera una Bullet por disparo.
+Attack(): vacio (hook disponible para sonido).
+
+
+9.3 AxeTower  (Game/Entities/AxeTower.cs)
+------------------------------------------
+Torre hachera. Hereda de Tower.
+Stats:
+  Rango      = 80 px  (deteccion)
+  _areaRango = 60 px  (radio de dano real)
+  Dano       = 50
+  Cadencia   = 0.5 ataques/segundo
+  Frames     = 2, intervalo = 0.2s
+Comportamiento especial (Override Update):
+  No genera proyectiles. Cuando detecta un enemigo en Rango,
+  aplica dano instantaneo a TODOS los enemigos dentro de _areaRango.
+Attack(): vacio (hook disponible para sonido).
+
+
+9.4 Enemy  (abstract, Game/Entities/Enemy.cs)
+----------------------------------------------
+Clase base de todos los enemigos. Implementa IDamageable e IAnimatable.
+
+Propiedades:
+  Vector2 Position    : posicion actual en pantalla
+  int Health          : puntos de vida
+  bool IsAlive        : estado de vida
+  float Velocidad     : px por segundo
+  int MonedasAlMorir  : monedas que otorga al morir
+  int Width, Height   : tamano para colision (48x48)
+
+Comportamiento (Update):
+  1. Calcula la direccion normalizada hacia el waypoint actual
+  2. Avanza Position en esa direccion * Velocidad * dt
+  3. Si llego al waypoint (distancia < 6px), pasa al siguiente
+  4. Si llego al ultimo waypoint: IsAlive = false,
+     llama GameManager.TakeCastleHit()
+  5. Avanza la animacion
+
+TakeDamage(amount):
+  Resta amount de Health. Si llega a 0: IsAlive = false,
+  dispara evento OnDied y llama GameManager.EnemyDied(monedas).
+
+Render():
+  Dibuja el frame actual del spriteSheet[] en 64x64 px.
+
+CollidesWith(x,y,w,h):
+  Colision AABB entre el enemigo y un rectangulo dado.
+
+
+9.5 SoldierEnemy  (Game/Entities/SoldierEnemy.cs)
+--------------------------------------------------
+Enemigo estandar. Hereda de Enemy.
+Stats:
+  Health         = 100
+  Velocidad      = 60 px/s
+  MonedasAlMorir = 10
+  Frames         = 4, intervalo = 0.12s
+
+
+9.6 DroneEnemy  (Game/Entities/DroneEnemy.cs)
+----------------------------------------------
+Enemigo veloz. Hereda de Enemy.
+Stats:
+  Health         = 60   (-40% vs Soldier)
+  Velocidad      = 102 px/s  (+70% vs Soldier)
+  MonedasAlMorir = 15
+  Frames         = 4, intervalo = 0.07s (animacion mas rapida)
+Aparece cada 3 spawns (indice % 3 == 2).
+
+
+9.7 Castle  (Game/Entities/Castle.cs)
+--------------------------------------
+El castillo que el jugador debe defender. Implementa IDamageable.
+Posicion fija: columna 15 (x = 960), y = 0.
+El dano al castillo se gestiona via GameManager.TakeCastleHit()
+(no directamente por TakeDamage) para disparar los eventos correctos.
+Render(): sprite de 192x192 px en su posicion fija.
+
+
+9.8 Bullet  (Game/Entities/Bullet.cs)
+--------------------------------------
+Proyectil disparado por ArcherTower.
+
+Constructor:
+  Recibe posicion inicial, referencia al enemigo objetivo,
+  dano y sprite. Calcula la direccion inicial hacia el objetivo.
+
+Constantes:
+  Speed     = 700 px/s
+  HitRadius = 20 px   (radio de colision para impacto)
+  W = 7, H = 28       (tamano de render, proporcion original 5:21 x4 /3)
+
+Comportamiento (homing):
+  Cada frame recalcula la direccion hacia el enemigo si este sigue vivo,
+  garantizando que la bala siempre impacte. Si el enemigo muere en vuelo,
+  la bala sigue en linea recta hasta salir de pantalla.
+
+Render():
+  Usa SDL_RenderCopyEx para rotar el sprite segun la direccion actual.
+  Angulo = atan2(dir.Y, dir.X) * (180/PI) + 90
+  (el +90 compensa que el sprite apunta hacia arriba en su PNG original)
+  La bala se destruye si sale de los limites (-100 a 1200 en X, -100 a 900 en Y).
+
+
+--------------------------------------------------------------------------------
+10. FABRICAS
+--------------------------------------------------------------------------------
+
+TowerFactory  (Game/Factories/TowerFactory.cs)
+  Metodo estatico Create(TowerType, x, y, sheet, bulletSheet):
+    TowerType.Archer --> new ArcherTower(x, y, sheet, bulletSheet)
+    TowerType.Axe    --> new AxeTower(x, y, sheet)
+  bulletSheet es null para AxeTower ya que no usa proyectiles.
+
+EnemyFactory  (Game/Factories/EnemyFactory.cs)
+  Metodo estatico Create(EnemyType, waypoints, frames[]):
+    EnemyType.Soldier --> new SoldierEnemy(waypoints, frames)
+    EnemyType.Drone   --> new DroneEnemy(waypoints, frames)
+
+
+--------------------------------------------------------------------------------
+11. MANAGERS
+--------------------------------------------------------------------------------
+
+GameManager  (Game/Managers/GameManager.cs)
+  Singleton. Unica fuente de verdad del estado global de la partida.
+
+  Propiedades (solo lectura externa):
+    int Monedas          : monedas disponibles del jugador (inicio: 100)
+    int Hits             : vidas del castillo (inicio: 3, max: 3)
+    GameState Estado     : estado actual del juego (inicio: Menu)
+    int OleadaActual     : numero de oleada en curso (inicio: 1)
+    int TotalOleadas     : total de oleadas (3)
+    int PuntajeAcumulado : suma de monedas ganadas por kills
+
+  Eventos:
+    OnEnemyDied(int monedas) : al morir un enemigo
+    OnCastleHit()            : al recibir un golpe el castillo
+    OnWaveComplete()         : al completar una oleada
+
+  Metodos:
+    SetState(GameState)    : cambia el estado del juego
+    AddCoins(amount)       : suma monedas
+    SpendCoins(amount)     : resta monedas
+    TakeCastleHit()        : resta 1 vida, si llega a 0 -> Defeat
+    EnemyDied(coins)       : suma monedas y puntaje, dispara OnEnemyDied
+    WaveComplete()         : si quedan oleadas: OleadaActual++, Estado=SkillTree
+                             si es la ultima: Estado=Victory
+    NextWave()             : Estado=Planning (usado para transicion futura)
+    ResetGame()            : resetea todos los valores a sus defaults
+
+StateManager  (Game/Managers/StateManager.cs)
+  Contexto del patron State. Mantiene el estado activo.
+
+  Metodos:
+    ChangeState(IGameState) : llama Exit() al estado saliente,
+                              asigna el nuevo, llama Enter()
+    Update(float dt)        : delega al estado activo
+    Render()                : delega al estado activo
+
+
+--------------------------------------------------------------------------------
+12. ESTADOS DEL JUEGO
+--------------------------------------------------------------------------------
+
+12.1 MenuState  (Game/States/MenuState.cs)
+-------------------------------------------
+Pantalla de inicio del juego.
+
+Enter():
+  Carga MainMenu.png como fondo y las dos fuentes de texto.
+
+Update():
+  Detecta ENTER o click izquierdo.
+  Al activarse: ResetGame() y cambia a PlanningState.
+
+Render():
+  Dibuja fondo, titulo del juego centrado en dos lineas,
+  instruccion "ENTER para jugar" y creditos de la materia.
+
+
+12.2 PlanningState  (Game/States/PlanningState.cs)
+---------------------------------------------------
+Pantalla de colocacion de torres antes de cada oleada.
+
+Enter():
+  Carga fondo, fuentes, sprites de torres y sprite de bala (bullet.png).
+
+Campos:
+  _cursorCol, _cursorRow : posicion actual del cursor en el grid
+  _seleccion             : 0=Arquero, 1=Hachero
+  _timer                 : antirrepeticion de teclas (delay: 0.15s)
+
+Controls:
+  FLECHAS    : mueven el cursor por el grid
+  Q / E      : cambian entre tipos de torre
+  ENTER      : coloca la torre si la celda esta libre y hay monedas
+  ESPACIO    : comienza la oleada (cambia a CombatState)
+
+Render():
+  Dibuja fondo, torres ya colocadas, torre fantasma en el cursor
+  (preview de lo que se va a colocar), borde verde/rojo segun validez,
+  y HUD con monedas disponibles, tipo de torre y controles.
+
+Logica de colocacion:
+  px = _cursorCol * TILE
+  py = _cursorRow * TILE
+  Verifica GameManager.Monedas >= costo y Map.CanPlaceTower(px, py)
+  Si es valido: crea la torre, ocupa la celda, descuenta monedas.
+  Costos: Arquero = 50 monedas, Hachero = 75 monedas.
+
+
+12.3 CombatState  (Game/States/CombatState.cs)
+-----------------------------------------------
+Estado principal de combate. Gestiona oleadas de enemigos.
+
+Enter():
+  Carga recursos graficos.
+  Llama GameManager.SetState(Combat) para limpiar el estado anterior.
+  Se suscribe a OnEnemyDied y OnCastleHit.
+
+Campos:
+  _enemies          : lista de enemigos activos
+  _bullets          : lista de proyectiles activos
+  _torres           : referencia a las torres del jugador
+  _spawnTimer       : acumulador para spawn de enemigos
+  _spawnInterval    : 2.5 segundos entre spawns
+  _enemigosTotal    : 8 enemigos por oleada
+  _enemigosSpawneados / _enemigosEliminados : contadores
+
+Update() por frame:
+  1. Spawn: si quedan enemigos por spawnear y paso el intervalo, SpawnEnemy()
+  2. Actualiza todos los enemigos (movimiento por waypoints)
+  3. Actualiza todas las torres (deteccion, disparo, animacion)
+  4. Actualiza todas las balas (movimiento, colision, impacto)
+  5. Limpia balas muertas y enemigos muertos de las listas
+  6. Verifica fin de oleada: si spawneados >= total y lista vacia
+     -> GameManager.WaveComplete()
+  7. Verifica transicion de estado: Defeat/Victory/SkillTree
+
+SpawnEnemy():
+  Tipo = Drone si (indice % 3 == 2), Soldier en los otros casos.
+  Usa EnemyFactory para crear el enemigo en el primer waypoint.
+
+Exit():
+  Se desuscribe de los eventos del GameManager.
+
+Render():
+  Fondo -> Torres -> Enemigos -> Balas -> HUD -> Castillo -> Show
+
+
+12.4 VictoryState  (Game/States/VictoryAndDefeatState.cs)
+----------------------------------------------------------
+Pantalla de victoria al completar todas las oleadas.
+
+Enter(): carga MainMenu.png como fondo y fuentes.
+Update(): ENTER o click -> ResetGame() y vuelve a MenuState.
+Render(): fondo + "VICTORIA!" + puntaje + monedas + instruccion.
+
+
+12.5 DefeatState  (Game/States/VictoryAndDefeatState.cs)
+---------------------------------------------------------
+Pantalla de derrota cuando el castillo pierde todas sus vidas.
+
+Enter(): carga PantallaDerrota.png como fondo y fuentes.
+Update(): ENTER o click -> ResetGame() y vuelve a MenuState.
+Render(): fondo + "GAME OVER" + mensaje + puntaje final + instruccion.
+
+
+--------------------------------------------------------------------------------
+13. ASSETS (Recursos Graficos)
+--------------------------------------------------------------------------------
+
+Assets/
+  fondo.png                  : fondo del mapa de juego
+  MainMenu.png               : fondo del menu y pantalla de victoria
+  PantallaDerrota.png        : fondo de la pantalla de derrota
+  bullet.png                 : sprite de la flecha (5x21 px, apunta arriba)
+  image.png                  : imagen de referencia
+  powerup.png                : sprite de powerup (sin implementar)
+  Fonts/
+    pixel.ttf                : fuente pixel art usada en todo el juego
+  sprites/
+    archer_tower.png         : sprite de la torre arquera (128x128 px)
+    axe_tower.png            : sprite de la torre hachera (128x128 px)
+    castle.png               : sprite del castillo (192x192 px)
+    soldier.png              : sprite alternativo de soldado
+    drone.png                : sprite alternativo de drone
+  enemy/
+    0.png, 1.png, 2.png, 3.png  : 4 frames de animacion del enemigo
+
+
+--------------------------------------------------------------------------------
+14. GAME LOOP (Program.cs)
+--------------------------------------------------------------------------------
+
+  E.Initialize(1024, 768)
+  StateManager.ChangeState(new MenuState())
+
+  while (running):
+    dt = tiempo transcurrido desde el frame anterior (max 0.05s = 20fps min)
+
+    while (SDL_PollEvent):
+      if SDL_QUIT -> running = false
+
+    if KEY_ESC -> running = false
+
+    StateManager.Update(dt)
+    StateManager.Render()
+
+  SDL_Quit()
+
+El delta time esta limitado a 0.05s para evitar saltos de fisica
+en caso de que el sistema se congele momentaneamente.
+
+
+--------------------------------------------------------------------------------
+15. CONTROLES
+--------------------------------------------------------------------------------
+
+MENU:
+  ENTER / Click izquierdo  : iniciar partida
+
+PLANNING (Colocacion de torres):
+  Flechas arriba/abajo/izq/der : mover cursor por el mapa
+  Q                            : seleccionar Torre Arquera  (costo: 50)
+  E                            : seleccionar Torre Hachera  (costo: 75)
+  ENTER                        : colocar torre en la casilla del cursor
+  ESPACIO                      : comenzar la oleada de combate
+  ESC                          : salir del juego
+
+COMBAT:
+  ESC : salir del juego
+
+VICTORIA / DERROTA:
+  ENTER / Click izquierdo : volver al menu principal
+
+
+--------------------------------------------------------------------------------
+16. BALANCE DE JUEGO
+--------------------------------------------------------------------------------
+
+Torres:
+  Arquera  | Costo: 50  | Rango: 200px | Dano: 20  | Cadencia: 1.5/s | Proyectil: si
+  Hachera  | Costo: 75  | Rango: 80px  | Dano: 50  | Cadencia: 0.5/s | Area: 60px
+
+Enemigos:
+  Soldado  | HP: 100 | Vel: 60px/s  | Recompensa: 10 monedas
+  Drone    | HP: 60  | Vel: 102px/s | Recompensa: 15 monedas
+
+Oleadas:
+  - 8 enemigos por oleada
+  - 1 Drone cada 3 spawns (indices 2, 5, 8)
+  - Intervalo entre spawns: 2.5 segundos
+  - Total de oleadas: 3
+
+Castillo:
+  - Resiste 3 impactos antes de caer (Defeat)
+  - Cada enemigo que llega al final cuenta como 1 impacto
+
+Economia:
+  - Monedas iniciales: 100
+  - Cada kill suma monedas al saldo y al puntaje acumulado
+  - Las monedas no se resetean entre oleadas (se acumulan)
+
+
+--------------------------------------------------------------------------------
+17. ESTADOS FUTUROS / PENDIENTES
+--------------------------------------------------------------------------------
+
+SkillTree:
+  El enum GameState.SkillTree ya existe y la transicion esta preparada.
+  Falta implementar la pantalla con opciones de mejora entre oleadas.
+  Flujo previsto: Combat -> SkillTree -> Planning -> Combat
+
+Assets sin usar:
+  powerup.png     : preparado para sistema de powerups
+  sprites/soldier.png, sprites/drone.png : sprites alternativos de enemigos
+
+
+================================================================================
+  FIN DE LA DOCUMENTACION
+================================================================================

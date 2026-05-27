@@ -1,4 +1,3 @@
-using ProyectoSDL2.Game.Interfaces;
 using System;
 
 namespace ProyectoSDL2.Game.Managers
@@ -32,10 +31,9 @@ namespace ProyectoSDL2.Game.Managers
         public int       PuntajeAcumulado { get; private set; } = 0;
 
         // ── Eventos ────────────────────────────────────────────────────────────
-        public event Action<int> OnEnemyDied;      // arg: monedas que otorga el enemigo
+        public event Action<int> OnEnemyDied;
         public event Action      OnCastleHit;
         public event Action      OnWaveComplete;
-        public event Action<IGameState> OnStateChanged;
 
         // ── Operaciones ────────────────────────────────────────────────────────
         public void SetState(GameState state)

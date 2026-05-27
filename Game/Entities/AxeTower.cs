@@ -19,21 +19,10 @@ namespace ProyectoSDL2.Game.Entities
             intervalFrame = 0.2f;
         }
 
-        public override void Attack()
-        {
-            Engine.Engine.Debug("AxeTower: ¡golpe de área!");
-        }
+        public override void Attack() { }
 
-        // Sobreescribe ApplyDamage para dañar a TODOS los enemigos en el área
-        protected override void ApplyDamage(Enemy primaryTarget)
-        {
-            // El daño se aplica al objetivo principal y a los cercanos.
-            // El Update de Tower llama a Attack() + ApplyDamage(primerEnemigo),
-            // pero necesitamos la lista completa → se maneja en Update override.
-        }
-
-        // Override Update para aplicar daño en área
-        public override void Update(float dt, List<Enemy> enemies)
+        // Override Update para aplicar daño de área instantáneo (sin proyectil)
+        public override void Update(float dt, List<Enemy> enemies, List<Bullet> bullets)
         {
             timerAtaque += dt;
             atacando     = false;

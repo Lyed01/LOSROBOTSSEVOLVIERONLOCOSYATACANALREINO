@@ -16,6 +16,7 @@ namespace ProyectoSDL2.Game.States
         private Font _fontHud;
         private Image _imgArcherTower;
         private Image _imgAxeTower;
+        private Image _imgBullet;
 
         private const int COSTO_ARCHER = 50;
         private const int COSTO_AXE = 75;
@@ -44,7 +45,8 @@ namespace ProyectoSDL2.Game.States
             _fondo = Engine.Engine.LoadImage("Assets/fondo.png");
             _fontHud = Engine.Engine.LoadFont("Assets/Fonts/pixel.ttf", 20);
             _imgArcherTower = Engine.Engine.LoadImage("Assets/sprites/archer_tower.png");
-            _imgAxeTower = Engine.Engine.LoadImage("Assets/sprites/axe_tower.png");
+            _imgAxeTower    = Engine.Engine.LoadImage("Assets/sprites/axe_tower.png");
+            _imgBullet      = Engine.Engine.LoadImage("Assets/bullet.png");
         }
 
         public void Update(float dt)
@@ -77,7 +79,8 @@ namespace ProyectoSDL2.Game.States
                 {
                     Image sheet = _seleccion == 0 ? _imgArcherTower : _imgAxeTower;
                     TowerType tipo = _seleccion == 0 ? TowerType.Archer : TowerType.Axe;
-                    _torres.Add(TowerFactory.Create(tipo, px, py, sheet));
+                    Image bullet = _seleccion == 0 ? _imgBullet : null;
+                    _torres.Add(TowerFactory.Create(tipo, px, py, sheet, bullet));
                     _map.OccupyTile(px, py);
                     GameManager.Instance.SpendCoins(costo);
                 }
@@ -95,6 +98,7 @@ namespace ProyectoSDL2.Game.States
             SDL.SDL_Rect destFondo = new SDL.SDL_Rect { x = 0, y = 0, w = 1024, h = 576 };
             SDL.SDL_RenderCopy(Engine.Engine.renderer, _fondo.Pointer, IntPtr.Zero, ref destFondo);
             foreach (var t in _torres) t.Render();
+
 
             // Torre fantasma en el cursor
             int cx = _cursorCol * TILE;

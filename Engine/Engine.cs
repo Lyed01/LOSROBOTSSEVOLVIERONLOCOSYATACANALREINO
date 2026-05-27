@@ -1,19 +1,12 @@
 ﻿using SDL2;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ProyectoSDL2.Engine
 {
     public class Engine
     {
-        static IntPtr screen;
-        static int ancho, alto;
         static public IntPtr renderer;
         static public IntPtr window;
 
@@ -99,18 +92,6 @@ namespace ProyectoSDL2.Engine
         public static Font LoadFont(string imagePath, short size)
         {
             return new Font(imagePath, size);
-        }
-
-        public static IntPtr LoadFont2(string filename, int size)
-        {
-            // Carga la fuente con un tamaño de 24 puntos
-            IntPtr font = SDL_ttf.TTF_OpenFont(filename, size);
-            if (font == IntPtr.Zero)
-            {
-                Console.WriteLine("Error al cargar la fuente: " + SDL.SDL_GetError());
-                Environment.Exit(6);
-            }
-            return font;
         }
 
         public static Image LoadImage(string imagePath)
