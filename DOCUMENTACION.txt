@@ -9,8 +9,13 @@
 --------------------------------------------------------------------------------
 
 Juego de defensa de torres (Tower Defense) desarrollado en C# con SDL2.
-El jugador debe defender el castillo colocando torres que disparan a oleadas
-de robots enemigos que avanzan por un camino prefijado en el mapa.
+El jugador defiende el castillo colocando torres que atacan a oleadas de
+robots enemigos que avanzan por un camino prefijado. Entre ronda y ronda se
+abre un arbol de habilidades para desbloquear torres y mejorarlas.
+
+La partida se divide en NIVELES, y cada nivel en 3 RONDAS. La dificultad
+escala con el progreso (mas enemigos y con mas vida). Hay dos monedas:
+oro (comun) y cristales (especial), que se gastan en el arbol.
 
 Tecnologias:
   - Lenguaje:    C# (.NET 9)
@@ -19,8 +24,11 @@ Tecnologias:
   - Audio:       SDL2_mixer
   - Libreria:    Sayers.SDL2.Core 1.0.11
 
-Resolucion de pantalla: 1024 x 768 px
-Tamano de casilla (tile): 64 x 64 px
+Resolucion: ventana fisica 1280 x 960 px; el juego se dibuja en coordenadas
+            logicas 1024 x 768 px y SDL lo escala x1.25 (SDL_RenderSetLogicalSize).
+            Asi se agranda la ventana sin tocar posiciones ni waypoints; al ser
+            ambos 4:3 exacto no hay barras negras.
+Tamano de casilla (tile): 64 x 64 px (en coordenadas logicas)
 Grid del mapa: 16 columnas x 9 filas
 
 
@@ -30,26 +38,38 @@ Grid del mapa: 16 columnas x 9 filas
 
   [MenuState]
       |
-      | ENTER / Click
+      | ENTER / Click  (llama ResetGame)
       v
-  [PlanningState]  <---------+
-      |                      |
-      | ESPACIO               |
-      v                      |
-  [CombatState]              |
-      |                      |
-      |-- Oleada completa --> GameManager.WaveComplete()
-      |       |                       |
-      |       | Quedan oleadas        | Ultima oleada
-      |       v                       v
-      |  [PlanningState]         [VictoryState]
+  [PlanningState]  <----------------------+
+      |                                   |
+      | ESPACIO (comenzar ronda)          |
+      v                                   |
+  [CombatState]                           |
+      |                                   |
+      |-- Ronda completa --> WaveComplete()|
+      |        |                          |
+      |        v                          |
+      |   [SkillTreeState]  --------------+
+      |        |   (Continuar avanza de ronda; al cerrar
+      |        |    la 3a ronda avanza de nivel)
+      |        |
+      |        +-- Ultimo nivel completado --> [VictoryState]
       |
-      |-- Castillo destruido --> [DefeatState]
+      |-- Castillo sin vida / boss llega --> [DefeatState]
 
-Desde VictoryState y DefeatState, ENTER vuelve al MenuState.
+Niveles y rondas:
+  - Cada NIVEL tiene 3 RONDAS (RONDAS_POR_NIVEL = 3).
+  - La partida llega hasta TotalNiveles (5). Completar el ultimo = Victoria.
+  - La pantalla de mejoras (SkillTree) aparece DESPUES DE CADA RONDA.
+  - "Continuar" avanza a la siguiente ronda; si era la 3a ronda, pasa al
+    siguiente nivel (ronda 1).
+  - Al final de un nivel (3a ronda) el arbol ofrece ademas:
+      * Repetir nivel  (volver a la ronda 1 del nivel actual)
+      * Nivel anterior (retroceder un nivel para juntar recursos)
+    Esto permite farmear oro/cristales si faltan recursos para avanzar.
 
 Estados del enum GameState:
-  Menu, Planning, Combat, Victory, Defeat, SkillTree (reservado para futuro)
+  Menu, Planning, Combat, Victory, Defeat, SkillTree  (todos implementados)
 
 
 --------------------------------------------------------------------------------
@@ -63,11 +83,12 @@ Controla que pantalla/logica esta activa en cada momento.
 Participantes:
   - IGameState          : interfaz que define el contrato de cada estado
   - StateManager        : contexto que mantiene el estado actual
-  - MenuState           : estado del menu principal
-  - PlanningState       : estado de colocacion de torres
-  - CombatState         : estado de combate con oleadas
-  - VictoryState        : estado de pantalla de victoria
-  - DefeatState         : estado de pantalla de derrota
+  - MenuState           : menu principal
+  - PlanningState       : colocacion de torres
+  - CombatState         : combate con oleadas
+  - SkillTreeState      : arbol de habilidades entre rondas
+  - VictoryState        : pantalla de victoria
+  - DefeatState         : pantalla de derrota
 
 Flujo: StateManager.ChangeState(nuevoEstado) llama Exit() en el estado
 saliente y Enter() en el entrante. Update() y Render() se delegan al
@@ -78,7 +99,7 @@ estado activo en cada frame del game loop.
 ----------------------------------
 GameManager usa Singleton con doble verificacion (double-checked locking)
 para garantizar una unica instancia global que gestiona el estado de la
-partida (monedas, oleada, vidas del castillo).
+partida (monedas, cristales, nivel, ronda, vida del castillo, torres).
 
   private static GameManager _instance;
   private static readonly object _lock = new object();
@@ -88,42 +109,71 @@ partida (monedas, oleada, vidas del castillo).
 ----------------------------------------
 Dos fabricas encapsulan la creacion de entidades:
 
-  TowerFactory.Create(TowerType, x, y, sheet, bulletSheet)
-    --> ArcherTower o AxeTower segun el tipo
+  TowerFactory.Create(TowerType, x, y, sheet, bulletSheet,
+                      direccion, fuego, framesAtaque)
+    --> ArcherTower, AxeTower o MageTower segun el tipo
+    --> Ademas aplica las mejoras (niveles) propias de ese tipo de torre
 
   EnemyFactory.Create(EnemyType, waypoints, frames)
-    --> SoldierEnemy o DroneEnemy segun el tipo
+    --> SoldierEnemy, DroneEnemy, MegaTankEnemy o BossEnemy
+    --> Ademas escala la vida segun la dificultad de la ronda
 
-Ventaja: el codigo cliente (PlanningState, CombatState) no conoce
-las clases concretas, solo trabaja con Tower y Enemy.
+Ventaja: el codigo cliente no conoce las clases concretas, solo trabaja
+con Tower y Enemy.
 
 
 3.4 TEMPLATE METHOD (Metodo Plantilla)
 ----------------------------------------
-La clase abstracta Tower define el algoritmo general de Update():
-  1. Acumular tiempo de ataque
-  2. Buscar enemigo en rango
-  3. Si hay objetivo: llamar Attack() + Shoot()
-  4. Llamar UpdateAnimation()
+La clase abstracta Tower define el algoritmo general de Update()
+(acumular tiempo, buscar enemigo en rango, atacar, animar). Las subclases
+sobreescriben pasos:
+  - ArcherTower: usa el Shoot() heredado (dispara Bullet con homing)
+  - AxeTower:    sobreescribe Update() para dano en area ciclico + animacion
+  - MageTower:   sobreescribe Update() para el haz de fuego ciclico
 
-Las subclases pueden sobreescribir pasos especificos:
-  - ArcherTower: usa el Shoot() heredado (dispara Bullet)
-  - AxeTower:    sobreescribe Update() completo para dano en area instantaneo
-
-Lo mismo aplica a Enemy: la clase abstracta implementa el movimiento
-por waypoints y UpdateAnimation(), y las subclases solo configuran stats.
+Igual con Enemy: la base implementa el movimiento por waypoints y la
+animacion; las subclases solo configuran stats. El metodo virtual
+LlegarAlCastillo() lo sobreescribe BossEnemy para causar derrota directa.
 
 
 3.5 OBSERVER (Patron Observador)
 ----------------------------------
-GameManager expone eventos de C# que otros objetos pueden suscribirse:
+GameManager expone eventos de C#:
 
-  OnEnemyDied  : disparado cuando un enemigo muere, argumento = monedas
-  OnCastleHit  : disparado cuando un enemigo llega al castillo
-  OnWaveComplete: disparado cuando se completa una oleada
+  OnEnemyDied(int monedas) : al morir un enemigo
+  OnCastleHit()            : al recibir un golpe el castillo
+  OnWaveComplete()         : al completar una ronda
 
-CombatState se suscribe en Enter() y se desuscribe en Exit(), evitando
-referencias colgantes entre oleadas.
+CombatState se suscribe en Enter() y se desuscribe en Exit().
+
+
+3.6 OBJECT POOL GENERICO (Pool de Objetos)
+--------------------------------------------
+Patron de optimizacion: en lugar de crear y destruir objetos efimeros en
+cada frame (lo que genera basura para el recolector), se reutiliza una
+reserva de instancias.
+
+Implementacion GENERICA con generics de C#:
+
+  Pool<T> where T : class, IPoolable, new()   (Game/Pooling/Pool.cs)
+    - Sirve para CUALQUIER tipo pooleable, no solo balas.
+    - Obtener()  : entrega una instancia (reciclada o nueva) y la reactiva.
+    - Devolver() : guarda la instancia para volver a usarla.
+    - precarga   : crea instancias de antemano para evitar asignaciones.
+    - fabrica    : forma opcional de construir T (por defecto new T()).
+
+  IPoolable  (Game/Pooling/IPoolable.cs)
+    - AlObtener()  : se llama al sacar el objeto del pool (lo reinicia/activa).
+    - AlDevolver() : se llama al devolverlo (libera referencias, lo apaga).
+
+USO EN EL JUEGO: las balas de la torre arquera (Bullet implementa IPoolable).
+  GestorDeBalas (Game/Entities/GestorDeBalas.cs) encapsula un Pool<Bullet> y
+  la lista de balas activas:
+    - Disparar() : obtiene una bala del pool, la configura y la activa.
+    - Update()   : avanza las balas y devuelve al pool las que murieron.
+    - Render()   : dibuja las balas activas.
+  Asi las torres y el CombatState no manejan el ciclo de vida de las balas
+  (separacion de responsabilidades).
 
 
 --------------------------------------------------------------------------------
@@ -152,13 +202,26 @@ Program.cs
     |
     +-- Entities/
     |   +-- Tower.cs         (clase base abstracta de torres)
-    |   +-- ArcherTower.cs   (torre arquera)
-    |   +-- AxeTower.cs      (torre hachera)
+    |   +-- ArcherTower.cs   (torre arquera - proyectiles)
+    |   +-- AxeTower.cs      (torre hachera - melee en area)
+    |   +-- MageTower.cs     (torre de mago - haz de fuego)
+    |   +-- Direccion.cs     (enum de direccion del haz del mago)
     |   +-- Enemy.cs         (clase base abstracta de enemigos)
     |   +-- SoldierEnemy.cs  (enemigo soldado)
     |   +-- DroneEnemy.cs    (enemigo drone)
+    |   +-- MegaTankEnemy.cs (enemigo mega tanque)
+    |   +-- BossEnemy.cs     (enemigo boss)
     |   +-- Castle.cs        (castillo a defender)
-    |   +-- Bullet.cs        (proyectil de flecha)
+    |   +-- Bullet.cs        (proyectil de flecha - POOLEABLE, implementa IPoolable)
+    |   +-- GestorDeBalas.cs (administra las balas con un Pool<Bullet> generico)
+    |
+    +-- Skills/
+    |   +-- SkillNode.cs     (nodo del arbol + enums de accion/moneda/objetivo)
+    |   +-- SkillTree.cs     (red de nodos por rama y logica de compra)
+    |
+    +-- Pooling/
+    |   +-- IPoolable.cs     (contrato de objeto reutilizable por el pool)
+    |   +-- Pool.cs          (POOL GENERICO Pool<T> de objetos reutilizables)
     |
     +-- Factories/
     |   +-- TowerFactory.cs  (fabrica de torres)
@@ -167,11 +230,13 @@ Program.cs
     +-- Managers/
     |   +-- GameManager.cs   (singleton de estado global)
     |   +-- StateManager.cs  (gestor de estados del juego)
+    |   +-- DatosTorre.cs    (datos por tipo de torre)
     |
     +-- States/
         +-- MenuState.cs              (pantalla de inicio)
         +-- PlanningState.cs          (colocacion de torres)
         +-- CombatState.cs            (combate)
+        +-- SkillTreeState.cs         (arbol de habilidades)
         +-- VictoryAndDefeatState.cs  (victoria y derrota)
 
 
@@ -180,33 +245,23 @@ Program.cs
 --------------------------------------------------------------------------------
 
 IGameState  (Game/Interfaces/IGameState.cs)
-  Contrato que debe cumplir cada estado del juego.
-  Metodos:
-    void Enter()          : se llama al activar el estado (cargar recursos)
-    void Update(float dt) : logica del frame (dt = delta time en segundos)
-    void Render()         : dibujar el frame actual
-    void Exit()           : se llama al desactivar el estado (liberar subs)
+  void Enter()          : se llama al activar el estado (cargar recursos)
+  void Update(float dt) : logica del frame (dt = delta time en segundos)
+  void Render()         : dibujar el frame actual
+  void Exit()           : se llama al desactivar el estado (liberar subs)
 
 IDamageable  (Game/Interfaces/IDamageable.cs)
-  Contrato para entidades que pueden recibir dano.
-  Propiedades:
-    int  Health   : puntos de vida actuales
-    bool IsAlive  : verdadero si sigue vivo
-  Metodos:
-    void TakeDamage(int amount) : aplica dano y gestiona muerte
+  int  Health   : puntos de vida actuales
+  bool IsAlive  : verdadero si sigue vivo
+  void TakeDamage(int amount) : aplica dano y gestiona muerte
 
 IAttacker  (Game/Interfaces/IAttacker.cs)
-  Contrato para entidades que atacan.
-  Propiedades:
-    float Rango : alcance del ataque en pixeles
-    float Dano  : dano por ataque
-  Metodos:
-    void Attack() : ejecuta el ataque (hook para sonido/efectos)
+  float Rango : alcance del ataque en pixeles
+  float Dano  : dano por ataque
+  void Attack() : ejecuta el ataque (hook para sonido/efectos)
 
 IAnimatable  (Game/Interfaces/IAnimatable.cs)
-  Contrato para entidades con animacion por frames.
-  Metodos:
-    void UpdateAnimation(float dt) : avanza el frame de animacion
+  void UpdateAnimation(float dt) : avanza el frame de animacion
 
 
 --------------------------------------------------------------------------------
@@ -214,50 +269,43 @@ IAnimatable  (Game/Interfaces/IAnimatable.cs)
 --------------------------------------------------------------------------------
 
 Engine.cs
-  Clase estatica que encapsula toda la interaccion con SDL2.
+  Clase estatica que encapsula la interaccion con SDL2.
   Responsabilidades:
     - Inicializar SDL2, SDL2_image, SDL2_ttf y SDL2_mixer
-    - Crear la ventana y el renderer
-    - Limpiar y presentar el renderer (Clear / Show)
+    - Crear ventana y renderer
+    - Clear / Show del renderer
     - Cargar imagenes y fuentes
-    - Detectar input de teclado (KeyPress via SDL_GetKeyboardState)
-    - Detectar clicks de raton (MouseClick via cola de eventos)
-    - Dibujar texto (DrawText, TextWidth)
-    - Dibujar imagenes con rotacion (Draw con angulo)
-    - Constantes de teclas: KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT,
-      KEY_ESP, KEY_Q, KEY_E, KEY_ESC, MOUSE_LEFT, MOUSE_RIGHT
+    - Input de teclado (KeyPress) y de raton (MouseClick, MousePosition)
+    - Dibujar texto (DrawText, TextWidth) e imagenes con rotacion (Draw)
 
   Metodos relevantes:
-    Initialize(w, h)        : inicia SDL y crea ventana de w x h px
-    Clear()                 : limpia el renderer con color celeste
-    Show()                  : presenta el renderer en pantalla
-    LoadImage(path)         : devuelve Image cargada desde archivo
-    LoadFont(path, size)    : devuelve Font cargada desde archivo
-    DrawText(txt,x,y,r,g,b,font) : renderiza texto en pantalla
-    TextWidth(txt, font)    : ancho en px del texto para centrado
-    KeyPress(keycode)       : true si la tecla esta presionada
-    MouseClick(btn,x,y)     : true si hubo click, devuelve posicion
+    Initialize(w, h)         : inicia SDL y crea ventana
+    Clear()                  : limpia el renderer
+    Show()                   : presenta el renderer
+    LoadImage(path)          : carga Image; si falta el archivo cierra el juego
+    LoadImageSafe(path)      : carga Image SOLO si el archivo existe; si no,
+                               devuelve null (sirve para sprites opcionales)
+    LoadFont(path, size)     : carga Font
+    DrawText(txt,x,y,r,g,b,font) : renderiza texto
+    TextWidth(txt, font)     : ancho en px del texto (para centrar)
+    KeyPress(keycode)        : true si la tecla esta presionada
+    MouseClick(btn,x,y)      : true si hubo click; devuelve posicion
+
+  Constantes de teclas:
+    KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ESP (espacio), KEY_ESC,
+    KEY_A..KEY_Z (incluye KEY_Q, KEY_E, KEY_R, KEY_B, KEY_P),
+    KEY_0..KEY_9 (incluye KEY_3), MOUSE_LEFT, MOUSE_RIGHT, MOUSE_MIDDLE
 
 Image.cs
-  Wrapper sobre IntPtr de textura SDL2.
-  Constructor carga la textura via IMG_LoadTexture.
-  Si la imagen no existe llama Environment.Exit(4).
-  Propiedad:
-    IntPtr Pointer : puntero a la textura SDL2
+  Wrapper sobre IntPtr de textura SDL2. Constructor carga via
+  IMG_LoadTexture; si la imagen no existe llama Environment.Exit(4).
+  (Por eso, para sprites opcionales se usa Engine.LoadImageSafe.)
 
 Font.cs
-  Wrapper sobre IntPtr de fuente TTF.
-  Constructor carga la fuente via TTF_OpenFont.
-  Si la fuente no existe llama Engine.ErrorFatal (exit 1).
-  Propiedad:
-    IntPtr pointer : puntero a la fuente SDL2_ttf
+  Wrapper sobre IntPtr de fuente TTF. Si la fuente no existe, exit 1.
 
 Sound.cs
-  Wrapper sobre SDL2_mixer para musica de fondo.
-  Metodos:
-    Play()        : reproduce una vez
-    PlayLooping() : reproduce en bucle (musica de fondo)
-    Stop()        : detiene la reproduccion
+  Wrapper sobre SDL2_mixer (Play, PlayLooping, Stop).
 
 
 --------------------------------------------------------------------------------
@@ -265,24 +313,11 @@ Sound.cs
 --------------------------------------------------------------------------------
 
 Vector2  (Game/Vector2.cs)
-  Estructura (struct) de vector 2D con punto flotante.
-  Campos:  float X, float Y
-  Operadores: +, -, * (escalar)
-  Propiedades:
-    float Length : magnitud del vector
-  Metodos:
-    Normalized()          : vector unitario en la misma direccion
-    Distance(a, b)        : distancia euclidea entre dos puntos
-  Uso: posicion de enemigos, calculo de direccion de balas.
+  Struct de vector 2D (float X, Y). Operadores +, -, * (escalar).
+  Length, Normalized(), Distance(a, b).
 
 GameState  (Game/GameState.cs)
-  Enum con los estados posibles del juego:
-    Menu      : pantalla de inicio
-    Planning  : colocacion de torres entre oleadas
-    Combat    : combate activo
-    Victory   : el jugador gano todas las oleadas
-    Defeat    : el castillo fue destruido
-    SkillTree : reservado para futura pantalla de mejoras
+  Enum: Menu, Planning, Combat, Victory, Defeat, SkillTree.
 
 
 --------------------------------------------------------------------------------
@@ -290,28 +325,27 @@ GameState  (Game/GameState.cs)
 --------------------------------------------------------------------------------
 
 Responsabilidades:
-  - Definir los waypoints (puntos de paso) que siguen los enemigos
+  - Definir los waypoints que siguen los enemigos
   - Mantener un grid bool[16,9] de celdas ocupadas (camino + torres)
-  - Determinar si una celda puede recibir una torre
-  - Marcar celdas como ocupadas al colocar torres
+  - Validar y marcar celdas para colocar torres
 
-Constante:
-  TILE = 64  : tamano de cada celda en pixeles
+Constante: TILE = 64
 
-Waypoints:
-  Lista de Vector2 que define el recorrido del camino de izquierda
-  a derecha en zigzag hasta el castillo en la columna 15.
-  Al construir el mapa se marcan automaticamente todas las celdas
-  del camino como ocupadas para impedir colocar torres en ellas.
+Waypoints: lista de Vector2 que define el recorrido en zigzag hasta el
+castillo. Al construir el mapa se marcan las celdas del camino como
+ocupadas para impedir colocar torres encima.
 
 Metodos publicos:
   CanPlaceTower(pixelX, pixelY)  : true si la celda esta libre
   OccupyTile(pixelX, pixelY)     : marca la celda como ocupada
   SnapToGrid(pixelX, pixelY)     : ajusta coordenadas al grid
 
+NOTA: cada ronda se crea un Map nuevo (las torres se resetean), por lo que
+las celdas ocupadas tambien se limpian de forma automatica.
+
 
 --------------------------------------------------------------------------------
-9. ENTIDADES
+9. ENTIDADES - TORRES
 --------------------------------------------------------------------------------
 
 9.1 Tower  (abstract, Game/Entities/Tower.cs)
@@ -319,426 +353,460 @@ Metodos publicos:
 Clase base de todas las torres. Implementa IAttacker e IAnimatable.
 
 Propiedades:
-  int X, Y        : posicion de la celda (esquina superior izquierda)
-  float Rango     : alcance del ataque en pixeles
-  float Dano      : dano por disparo
+  int X, Y        : posicion de la celda
+  float Rango     : alcance del ataque
+  float Dano      : dano por ataque
   float cadencia  : ataques por segundo
+  bool Mejorada   : true si recibio alguna mejora del arbol
 
-Campos protegidos:
-  Image spriteSheet  : sprite de la torre
-  Image _bulletImg   : sprite del proyectil (null para torres sin bala)
-  int frameActual    : frame actual de animacion
-  float timerFrame   : acumulador de tiempo de animacion
-  float intervalFrame: segundos entre frames
-  int totalFrames    : cantidad de frames de animacion
-  bool atacando      : true si la torre ataco en el frame actual
+Metodo de mejora:
+  AplicarMejora(danoBonus, rangoBonus, cadenciaBonus)
+    Suma los bonos a las stats. Si algun bono es > 0, marca Mejorada = true.
+    Lo invoca TowerFactory al crear cada torre, usando los niveles del
+    tipo correspondiente.
 
-Comportamiento (Update):
-  1. Acumula timerAtaque con dt
-  2. Si supera 1/cadencia segundos busca el primer enemigo en rango
-  3. Llama Attack() (hook para sonido/efectos)
-  4. Llama Shoot() para crear un proyectil
-  5. Resetea timerAtaque y avanza la animacion
-
-Shoot() (virtual):
-  Crea un Bullet desde el centro superior del sprite de la torre
-  apuntando al enemigo objetivo. Posicion de origen:
-    cx = X + TILE/2          (centro horizontal de la casilla)
-    cy = Y + TILE/2 - 128    (parte superior del sprite)
-
-Render() (virtual):
-  Dibuja el sprite de 128x128 px centrado sobre la casilla:
-    renderX = X + 32 - 64  (centrado horizontalmente)
-    renderY = Y + 32 - 128 (anclado por la base al centro del tile)
+Update() general: acumula tiempo, busca enemigo en rango, Attack()+Shoot(),
+y avanza la animacion. Shoot() crea un Bullet hacia el objetivo.
+Render(): dibuja el sprite de 128x128 anclado por la base al tile.
 
 
 9.2 ArcherTower  (Game/Entities/ArcherTower.cs)
 -------------------------------------------------
-Torre de arquero. Hereda de Tower.
-Stats:
-  Rango     = 200 px
-  Dano      = 20
-  Cadencia  = 1.5 ataques/segundo
-  Frames    = 2, intervalo = 0.15s
-Comportamiento: usa el Shoot() heredado, genera una Bullet por disparo.
-Attack(): vacio (hook disponible para sonido).
+Torre de arquero. Dispara proyectiles (Bullet con homing).
+Stats base:
+  Rango = 200 px | Dano = 20 | Cadencia = 1.5/s | Frames = 2
+Esta DESBLOQUEADA desde el inicio de la partida.
 
 
-9.3 AxeTower  (Game/Entities/AxeTower.cs)
-------------------------------------------
-Torre hachera. Hereda de Tower.
-Stats:
-  Rango      = 80 px  (deteccion)
-  _areaRango = 60 px  (radio de dano real)
-  Dano       = 50
-  Cadencia   = 0.5 ataques/segundo
-  Frames     = 2, intervalo = 0.2s
-Comportamiento especial (Override Update):
-  No genera proyectiles. Cuando detecta un enemigo en Rango,
-  aplica dano instantaneo a TODOS los enemigos dentro de _areaRango.
-Attack(): vacio (hook disponible para sonido).
+9.3 AxeTower  (Game/Entities/AxeTower.cs)  [MELEE - GOLPE AL SUELO]
+-------------------------------------------------------------------
+Torre hachera. Cada 1/cadencia segundos pega un GOLPE AL SUELO que daña a
+TODOS los enemigos en un area de 3x3 tiles centrada en la torre: las 8
+casillas adyacentes (incluidas las DIAGONALES) mas la propia.
+Stats base:
+  Dano = 50 | Cadencia = 0.5/s (un golpe cada 2 s) | Area = 3x3 tiles
+Comportamiento (Override Update):
+  Calcula el rectangulo 3x3 (AreaGolpe). Si hay al menos un enemigo dentro
+  (colision AABB con CollidesWith), aplica dano a TODOS los que esten en el
+  area y arranca la animacion del golpe. Si no hay enemigos, no golpea.
+Animacion (en cada golpe, dura 0.4s):
+  Reproduce los frames Assets/sprites/axe_attack_0..2.png ARRIBA de la torre
+  (encima de su sprite, elevados OFFSET_ANIM px), SIN reemplazar el sprite de
+  la torre: la torre siempre se ve. Si los assets no existen, el golpe daña
+  igual pero no muestra animacion.
+Se desbloquea comprando su rama en el arbol.
 
 
-9.4 Enemy  (abstract, Game/Entities/Enemy.cs)
-----------------------------------------------
+9.4 MageTower  (Game/Entities/MageTower.cs)  [HAZ DE FUEGO]
+------------------------------------------------------------
+Torre de mago. Lanza un haz de fuego recto de 3 tiles en una direccion.
+Stats base:
+  Rango = 3*TILE (192 px) | Dano = 8 POR TICK | Cadencia: ciclo propio
+Mecanica del haz:
+  - Direccion fija elegida al colocar la torre (arriba/abajo/izq/derecha).
+  - El haz se PRENDE y APAGA ciclicamente: 1.5s encendido, 1.0s apagado.
+  - Mientras esta encendido, cada 0.3s (tick) daña a todos los enemigos
+    dentro del area del haz (rectangulo de 3 tiles en la direccion).
+  - El sprite del fuego solo se dibuja cuando el haz esta encendido
+    (Assets/sprites/fire.png; si falta, se dibuja un rectangulo naranja).
+Se desbloquea comprando su rama en el arbol.
+
+Direccion (Game/Entities/Direccion.cs):
+  enum Direccion { Arriba, Abajo, Izquierda, Derecha }
+
+
+--------------------------------------------------------------------------------
+10. ENTIDADES - ENEMIGOS
+--------------------------------------------------------------------------------
+
+10.1 Enemy  (abstract, Game/Entities/Enemy.cs)
+-----------------------------------------------
 Clase base de todos los enemigos. Implementa IDamageable e IAnimatable.
 
 Propiedades:
-  Vector2 Position    : posicion actual en pantalla
-  int Health          : puntos de vida
-  bool IsAlive        : estado de vida
-  float Velocidad     : px por segundo
-  int MonedasAlMorir  : monedas que otorga al morir
-  int Width, Height   : tamano para colision (48x48)
+  Vector2 Position     : posicion actual
+  int Health           : vida actual
+  int MaxHealth        : vida maxima (para la barra de vida)
+  bool IsAlive         : estado de vida
+  float Velocidad      : px por segundo
+  int MonedasAlMorir   : oro que otorga al morir
+  float CristalChance  : probabilidad (0..1) de soltar cristales
+  int CristalesAlMorir : cristales que suelta si "cae" la chance
 
-Comportamiento (Update):
-  1. Calcula la direccion normalizada hacia el waypoint actual
-  2. Avanza Position en esa direccion * Velocidad * dt
-  3. Si llego al waypoint (distancia < 6px), pasa al siguiente
-  4. Si llego al ultimo waypoint: IsAlive = false,
-     llama GameManager.TakeCastleHit()
-  5. Avanza la animacion
+Metodos:
+  EscalarVida(mult)    : multiplica la vida segun la dificultad y fija
+                         MaxHealth (lo invoca EnemyFactory al crear)
+  TakeDamage(amount)   : resta vida; al morir da oro (EnemyDied) y tira la
+                         chance de soltar cristales
+  LlegarAlCastillo()   : virtual. Por defecto resta un golpe al castillo
+                         (TakeCastleHit). El boss lo sobreescribe.
+  Render()             : dibuja el frame actual + una BARRA DE VIDA pequena
+                         encima (verde sobre rojo, proporcional a la vida)
+  CollidesWith(x,y,w,h): colision AABB con un rectangulo
 
-TakeDamage(amount):
-  Resta amount de Health. Si llega a 0: IsAlive = false,
-  dispara evento OnDied y llama GameManager.EnemyDied(monedas).
+10.2 SoldierEnemy   HP 200 | Vel 60  | Oro 2  | Cristal 10% (x1)
+10.3 DroneEnemy     HP 100 | Vel 102 | Oro 3  | Cristal 25% (x1)  (mas rapido)
+10.4 MegaTankEnemy  HP 600 | Vel 40  | Oro 8  | Cristal 40% (x2)  (mucha vida)
+10.5 BossEnemy      HP 3000| Vel 30  | Oro 50 | Cristal 100% (x5)
+     El boss sobreescribe LlegarAlCastillo(): si llega al castillo se
+     PIERDE LA PARTIDA directamente (PerderPartida -> Defeat), sin importar
+     la vida del castillo ni la fase.
 
-Render():
-  Dibuja el frame actual del spriteSheet[] en 64x64 px.
-
-CollidesWith(x,y,w,h):
-  Colision AABB entre el enemigo y un rectangulo dado.
-
-
-9.5 SoldierEnemy  (Game/Entities/SoldierEnemy.cs)
---------------------------------------------------
-Enemigo estandar. Hereda de Enemy.
-Stats:
-  Health         = 100
-  Velocidad      = 60 px/s
-  MonedasAlMorir = 10
-  Frames         = 4, intervalo = 0.12s
+NOTA: a la vida base de cada enemigo se le aplica el multiplicador de
+dificultad de la ronda (ver seccion 14).
 
 
-9.6 DroneEnemy  (Game/Entities/DroneEnemy.cs)
-----------------------------------------------
-Enemigo veloz. Hereda de Enemy.
-Stats:
-  Health         = 60   (-40% vs Soldier)
-  Velocidad      = 102 px/s  (+70% vs Soldier)
-  MonedasAlMorir = 15
-  Frames         = 4, intervalo = 0.07s (animacion mas rapida)
-Aparece cada 3 spawns (indice % 3 == 2).
+10.6 Castle  (Game/Entities/Castle.cs)
+---------------------------------------
+El castillo que el jugador defiende. Posicion fija en la columna 15.
+El dano se gestiona via GameManager.TakeCastleHit() (eventos).
 
+10.7 Bullet  (Game/Entities/Bullet.cs)
+---------------------------------------
+Proyectil de ArcherTower con comportamiento homing (recalcula la direccion
+hacia el enemigo cada frame). Speed 700 px/s, HitRadius 20 px. Se rota con
+SDL_RenderCopyEx segun la direccion y "muere" al impactar o salir de pantalla.
 
-9.7 Castle  (Game/Entities/Castle.cs)
---------------------------------------
-El castillo que el jugador debe defender. Implementa IDamageable.
-Posicion fija: columna 15 (x = 960), y = 0.
-El dano al castillo se gestiona via GameManager.TakeCastleHit()
-(no directamente por TakeDamage) para disparar los eventos correctos.
-Render(): sprite de 192x192 px en su posicion fija.
-
-
-9.8 Bullet  (Game/Entities/Bullet.cs)
---------------------------------------
-Proyectil disparado por ArcherTower.
-
-Constructor:
-  Recibe posicion inicial, referencia al enemigo objetivo,
-  dano y sprite. Calcula la direccion inicial hacia el objetivo.
-
-Constantes:
-  Speed     = 700 px/s
-  HitRadius = 20 px   (radio de colision para impacto)
-  W = 7, H = 28       (tamano de render, proporcion original 5:21 x4 /3)
-
-Comportamiento (homing):
-  Cada frame recalcula la direccion hacia el enemigo si este sigue vivo,
-  garantizando que la bala siempre impacte. Si el enemigo muere en vuelo,
-  la bala sigue en linea recta hasta salir de pantalla.
-
-Render():
-  Usa SDL_RenderCopyEx para rotar el sprite segun la direccion actual.
-  Angulo = atan2(dir.Y, dir.X) * (180/PI) + 90
-  (el +90 compensa que el sprite apunta hacia arriba en su PNG original)
-  La bala se destruye si sale de los limites (-100 a 1200 en X, -100 a 900 en Y).
+Es POOLEABLE (implementa IPoolable): no se crea con new en cada disparo sino
+que se obtiene de un Pool<Bullet> y se reinicializa con Configure(). Cuando
+muere, el GestorDeBalas la devuelve al pool para reutilizarla (ver 3.6).
 
 
 --------------------------------------------------------------------------------
-10. FABRICAS
+11. ARBOL DE HABILIDADES (Game/Skills)
+--------------------------------------------------------------------------------
+
+El arbol persiste durante toda la partida (vive en GameManager.Arbol). Se
+navega en SkillTreeState despues de cada ronda.
+
+SkillNode  (Game/Skills/SkillNode.cs)
+  Campos:
+    string Nombre, Descripcion
+    int    Costo
+    MonedaTipo Moneda          : Oro o Cristal
+    SkillAccion Accion         : que hace al comprarse
+    TorreObjetivo Torre        : a que torre afecta
+    int X, Y                   : posicion del nodo en pantalla
+    string ImagenRuta          : imagen del nodo (octagono); respaldo si falta
+    bool Comprado, Desbloqueado
+    List<int> Hijos            : nodos que se revelan al comprar este
+
+  Enums:
+    MonedaTipo    { Oro, Cristal }
+    TorreObjetivo { Arquero, Hachero, Mago }
+    SkillAccion   { Ninguno, DesbloquearTorre, MasCantidad, MasDano,
+                    MasRango, MasCadencia, VidaCastillo }
+
+SkillTree  (Game/Skills/SkillTree.cs)
+  Una RAMA por torre. El primer nodo de cada rama desbloquea esa torre
+  (excepto el arquero, que ya viene disponible). Comprar() valida moneda y
+  que el nodo este desbloqueado, cobra, aplica la accion y revela los hijos.
+
+  Nodos actuales:
+    RAMA ARQUERO (ya disponible)
+      0  Arquero        (gratis, raiz ya comprada)
+      1  +Arquero       Cristal 2  -> +1 arquero por ronda
+      2  Dano Arq.      Oro 30     -> +dano del arquero
+      3  Rango Arq.     Oro 30     -> +rango del arquero
+      11 Vida Castillo  Cristal 3  -> +1 vida maxima del castillo
+    RAMA HACHERO
+      4  Desbloq.Hachero Cristal 3 -> habilita la torre hachera (da 1)
+      5  +Hachero        Cristal 3 -> +1 hachero por ronda
+      6  Dano Hach.      Oro 40    -> +dano del hachero
+    RAMA MAGO
+      7  Desbloq.Mago    Cristal 4 -> habilita la torre de mago (da 1)
+      8  +Mago           Cristal 4 -> +1 mago por ronda
+      9  Dano Mago       Oro 40    -> +dano del mago
+      10 Cadencia Mago   Oro 50    -> el mago ataca mas seguido
+
+  Regla general:
+    - Mejoras de CANTIDAD y DESBLOQUEOS -> se pagan con CRISTALES.
+    - Mejoras de stats (dano/rango/cadencia) y vida castillo varian, ver
+      arriba. Los bonos por nivel: +10 dano, +30 rango, +0.3 cadencia.
+    - Las mejoras de stat aplican a las torres NUEVAS (las que se colocan
+      despues de comprarla), por tipo de torre.
+
+
+--------------------------------------------------------------------------------
+12. FABRICAS
 --------------------------------------------------------------------------------
 
 TowerFactory  (Game/Factories/TowerFactory.cs)
-  Metodo estatico Create(TowerType, x, y, sheet, bulletSheet):
-    TowerType.Archer --> new ArcherTower(x, y, sheet, bulletSheet)
-    TowerType.Axe    --> new AxeTower(x, y, sheet)
-  bulletSheet es null para AxeTower ya que no usa proyectiles.
+  Create(TowerType, x, y, sheet, bulletSheet, direccion, fuego, framesAtaque):
+    Archer --> ArcherTower(x, y, sheet, bulletSheet)
+    Axe    --> AxeTower(x, y, sheet, framesAtaque)
+    Mage   --> MageTower(x, y, sheet, direccion, fuego)
+  Tras crear la torre aplica AplicarMejora() con los niveles del tipo
+  correspondiente (gm.Arquero / gm.Hachero / gm.Mago).
 
 EnemyFactory  (Game/Factories/EnemyFactory.cs)
-  Metodo estatico Create(EnemyType, waypoints, frames[]):
-    EnemyType.Soldier --> new SoldierEnemy(waypoints, frames)
-    EnemyType.Drone   --> new DroneEnemy(waypoints, frames)
+  Create(EnemyType, waypoints, frames[]):
+    Soldier / Drone / MegaTank / Boss
+  Tras crear el enemigo llama EscalarVida(MultiplicadorVida()).
 
 
 --------------------------------------------------------------------------------
-11. MANAGERS
+13. MANAGERS
 --------------------------------------------------------------------------------
 
 GameManager  (Game/Managers/GameManager.cs)
-  Singleton. Unica fuente de verdad del estado global de la partida.
+  Singleton. Unica fuente de verdad del estado global.
 
-  Propiedades (solo lectura externa):
-    int Monedas          : monedas disponibles del jugador (inicio: 100)
-    int Hits             : vidas del castillo (inicio: 3, max: 3)
-    GameState Estado     : estado actual del juego (inicio: Menu)
-    int OleadaActual     : numero de oleada en curso (inicio: 1)
-    int TotalOleadas     : total de oleadas (3)
-    int PuntajeAcumulado : suma de monedas ganadas por kills
+  Propiedades:
+    int Monedas        : oro (inicio: 100)
+    int Cristales      : moneda especial (inicio: 0)
+    int Hits           : vida actual del castillo (inicio: 3)
+    int MaxHits        : vida maxima del castillo (inicio: 3)
+    GameState Estado   : estado actual (inicio: Menu)
+    int PuntajeAcumulado
+    int NivelActual    : nivel en curso (inicio: 1)
+    int RondaEnNivel   : ronda dentro del nivel, 1..3
+    int TotalNiveles   : niveles totales de la partida (5)
+    const RONDAS_POR_NIVEL = 3
+    SkillTree Arbol    : arbol de habilidades (persiste en la partida)
+    DatosTorre Arquero : desbloqueado, cantidad inicial (2 tras ResetGame)
+    DatosTorre Hachero : bloqueado, cantidad 0
+    DatosTorre Mago    : bloqueado, cantidad 0
+    const BONO_DANO=10, BONO_RANGO=30, BONO_CADENCIA=0.3
 
-  Eventos:
-    OnEnemyDied(int monedas) : al morir un enemigo
-    OnCastleHit()            : al recibir un golpe el castillo
-    OnWaveComplete()         : al completar una oleada
+  Eventos: OnEnemyDied(int), OnCastleHit(), OnWaveComplete()
 
-  Metodos:
-    SetState(GameState)    : cambia el estado del juego
-    AddCoins(amount)       : suma monedas
-    SpendCoins(amount)     : resta monedas
-    TakeCastleHit()        : resta 1 vida, si llega a 0 -> Defeat
-    EnemyDied(coins)       : suma monedas y puntaje, dispara OnEnemyDied
-    WaveComplete()         : si quedan oleadas: OleadaActual++, Estado=SkillTree
-                             si es la ultima: Estado=Victory
-    NextWave()             : Estado=Planning (usado para transicion futura)
-    ResetGame()            : resetea todos los valores a sus defaults
+  Metodos de economia:
+    AddCoins / SpendCoins / AddCristales / SpendCristales
+
+  Metodos de torres (los usa el arbol):
+    DatosDe(TorreObjetivo)      : devuelve el DatosTorre del tipo
+    DesbloquearTorre(t)         : habilita la torre y le da la primera unidad
+    SumarCantidad(t)            : +1 a la cantidad por ronda de ese tipo
+    SubirDano(t)/SubirRango(t)/SubirCadencia(t) : +1 nivel del tipo
+
+  Metodos del castillo:
+    SubirVidaCastillo()         : MaxHits++ y Hits++
+    RestaurarCastillo()         : Hits = MaxHits (al empezar cada ronda)
+    TakeCastleHit()             : Hits--, si llega a 0 -> Defeat
+    PerderPartida()             : Estado = Defeat (lo usa el boss)
+
+  Flujo de niveles/rondas:
+    WaveComplete()  : Estado = SkillTree (siempre, tras cada ronda)
+    EsFinDeNivel()  : true si RondaEnNivel >= 3
+    Continuar()     : avanza ronda; si era la 3a avanza nivel (o Victory si
+                      era el ultimo). Restaura el castillo y va a Planning.
+    RepetirNivel()  : ronda 1 del nivel actual, restaura castillo, Planning.
+                      (tambien lo usa "reintentar" en la derrota)
+    NivelAnterior() : retrocede un nivel, restaura castillo, Planning.
+
+  Escalado de dificultad:
+    EnemigosDeLaRonda() = 8 + (Nivel-1)*4 + (Ronda-1)*2
+    MultiplicadorVida() = 1 + (Nivel-1)*0.25 + (Ronda-1)*0.10
+
+  ResetGame(): reinicia todo (recursos, nivel, ronda, castillo, datos de
+    torres y un arbol nuevo).
+
+DatosTorre  (Game/Managers/DatosTorre.cs)
+  Estado de un tipo de torre en la partida:
+    bool Desbloqueada
+    int  Cantidad       : unidades de esa torre por ronda
+    int  NivelDano, NivelRango, NivelCadencia
 
 StateManager  (Game/Managers/StateManager.cs)
-  Contexto del patron State. Mantiene el estado activo.
-
-  Metodos:
-    ChangeState(IGameState) : llama Exit() al estado saliente,
-                              asigna el nuevo, llama Enter()
-    Update(float dt)        : delega al estado activo
-    Render()                : delega al estado activo
+  Contexto del patron State (ChangeState, Update, Render).
 
 
 --------------------------------------------------------------------------------
-12. ESTADOS DEL JUEGO
+14. ESTADOS DEL JUEGO
 --------------------------------------------------------------------------------
 
-12.1 MenuState  (Game/States/MenuState.cs)
--------------------------------------------
-Pantalla de inicio del juego.
+14.1 MenuState
+---------------
+Pantalla de inicio. ENTER o click -> ResetGame() y va a PlanningState.
 
-Enter():
-  Carga MainMenu.png como fondo y las dos fuentes de texto.
+14.2 PlanningState
+-------------------
+Colocacion de torres antes de cada ronda. Cada ronda EMPIEZA LIMPIA:
+mapa nuevo y sin torres (las torres se resetean entre rondas).
 
-Update():
-  Detecta ENTER o click izquierdo.
-  Al activarse: ResetGame() y cambia a PlanningState.
+Cantidades por tipo: al entrar lee la cantidad de cada torre desbloqueada
+(gm.Arquero/Hachero/Mago.Cantidad) y lleva un contador restante por tipo.
 
-Render():
-  Dibuja fondo, titulo del juego centrado en dos lineas,
-  instruccion "ENTER para jugar" y creditos de la materia.
+Controles:
+  FLECHAS  : mover el cursor por el grid
+  Q        : seleccionar Arquero
+  E        : seleccionar Hachero (solo si esta desbloqueado)
+  3        : seleccionar Mago    (solo si esta desbloqueado)
+  R        : (con el mago elegido) rotar la direccion del haz
+  ENTER    : colocar la torre del tipo elegido si queda cantidad y la
+             celda esta libre (descuenta del contador de ese tipo)
+  ESPACIO  : comenzar la ronda (va a CombatState)
 
+Render: fondo, torres colocadas (con un cuadrito DORADO sobre las que estan
+mejoradas), torre fantasma en el cursor (y el area del haz si es el mago),
+borde verde/rojo segun validez, y HUD con las cantidades por tipo.
 
-12.2 PlanningState  (Game/States/PlanningState.cs)
----------------------------------------------------
-Pantalla de colocacion de torres antes de cada oleada.
+14.3 CombatState
+-----------------
+Combate de la ronda. Calcula la cantidad de enemigos con
+EnemigosDeLaRonda() y los va spawneando cada 2.5s.
 
-Enter():
-  Carga fondo, fuentes, sprites de torres y sprite de bala (bullet.png).
+Eleccion de tipo de enemigo (ElegirTipo):
+  - Si es la 3a ronda y es el ULTIMO enemigo -> Boss.
+  - Probabilidad de MegaTank = (Nivel-1)*0.12 (mas probable a mayor nivel).
+  - Resto: Drone si (indice % 3 == 2), si no Soldier.
+Los sprites de MegaTank/Boss usan Assets/MegaTank y Assets/Boss; si faltan,
+reusan los del soldado/drone.
 
-Campos:
-  _cursorCol, _cursorRow : posicion actual del cursor en el grid
-  _seleccion             : 0=Arquero, 1=Hachero
-  _timer                 : antirrepeticion de teclas (delay: 0.15s)
+PAUSA: tecla P pausa/reanuda. En pausa el juego no avanza (enemigos, torres
+y balas quedan congelados) y se muestra el overlay "PAUSA".
 
-Controls:
-  FLECHAS    : mueven el cursor por el grid
-  Q / E      : cambian entre tipos de torre
-  ENTER      : coloca la torre si la celda esta libre y hay monedas
-  ESPACIO    : comienza la oleada (cambia a CombatState)
+Fin de ronda: cuando se spawnearon todos y no quedan enemigos vivos ->
+WaveComplete() -> SkillTreeState. Tambien chequea Defeat/Victory.
 
-Render():
-  Dibuja fondo, torres ya colocadas, torre fantasma en el cursor
-  (preview de lo que se va a colocar), borde verde/rojo segun validez,
-  y HUD con monedas disponibles, tipo de torre y controles.
+HUD: Oro, Cristales, Castillo X/MaxHits, Nivel/Ronda, Enemigos.
+Controles: P (pausa), ESC (salir).
 
-Logica de colocacion:
-  px = _cursorCol * TILE
-  py = _cursorRow * TILE
-  Verifica GameManager.Monedas >= costo y Map.CanPlaceTower(px, py)
-  Si es valido: crea la torre, ocupa la celda, descuenta monedas.
-  Costos: Arquero = 50 monedas, Hachero = 75 monedas.
+14.4 SkillTreeState
+--------------------
+Arbol de habilidades entre rondas. Red de nodos al centro y panel de datos
+a la derecha (oro, cristales, nivel/ronda, info del nodo y botones).
 
+Render: fondo (Assets/skills/fondo_mejoras.png o color oscuro), lineas
+padre->hijo, nodos como octagonos (imagen) o rectangulo de respaldo:
+  verde = comprado, amarillo = disponible, borde blanco = seleccionado.
 
-12.3 CombatState  (Game/States/CombatState.cs)
------------------------------------------------
-Estado principal de combate. Gestiona oleadas de enemigos.
+Controles:
+  FLECHAS  : mover la seleccion entre los nodos visibles
+  ENTER    : comprar el nodo seleccionado
+  ESPACIO  : Continuar (avanza ronda/nivel)
+  R        : Repetir nivel    (solo al final del nivel)
+  B        : Nivel anterior   (solo al final del nivel)
 
-Enter():
-  Carga recursos graficos.
-  Llama GameManager.SetState(Combat) para limpiar el estado anterior.
-  Se suscribe a OnEnemyDied y OnCastleHit.
+14.5 VictoryState
+------------------
+Al completar el ultimo nivel. ENTER o click -> ResetGame() y MenuState.
 
-Campos:
-  _enemies          : lista de enemigos activos
-  _bullets          : lista de proyectiles activos
-  _torres           : referencia a las torres del jugador
-  _spawnTimer       : acumulador para spawn de enemigos
-  _spawnInterval    : 2.5 segundos entre spawns
-  _enemigosTotal    : 8 enemigos por oleada
-  _enemigosSpawneados / _enemigosEliminados : contadores
-
-Update() por frame:
-  1. Spawn: si quedan enemigos por spawnear y paso el intervalo, SpawnEnemy()
-  2. Actualiza todos los enemigos (movimiento por waypoints)
-  3. Actualiza todas las torres (deteccion, disparo, animacion)
-  4. Actualiza todas las balas (movimiento, colision, impacto)
-  5. Limpia balas muertas y enemigos muertos de las listas
-  6. Verifica fin de oleada: si spawneados >= total y lista vacia
-     -> GameManager.WaveComplete()
-  7. Verifica transicion de estado: Defeat/Victory/SkillTree
-
-SpawnEnemy():
-  Tipo = Drone si (indice % 3 == 2), Soldier en los otros casos.
-  Usa EnemyFactory para crear el enemigo en el primer waypoint.
-
-Exit():
-  Se desuscribe de los eventos del GameManager.
-
-Render():
-  Fondo -> Torres -> Enemigos -> Balas -> HUD -> Castillo -> Show
-
-
-12.4 VictoryState  (Game/States/VictoryAndDefeatState.cs)
-----------------------------------------------------------
-Pantalla de victoria al completar todas las oleadas.
-
-Enter(): carga MainMenu.png como fondo y fuentes.
-Update(): ENTER o click -> ResetGame() y vuelve a MenuState.
-Render(): fondo + "VICTORIA!" + puntaje + monedas + instruccion.
-
-
-12.5 DefeatState  (Game/States/VictoryAndDefeatState.cs)
----------------------------------------------------------
-Pantalla de derrota cuando el castillo pierde todas sus vidas.
-
-Enter(): carga PantallaDerrota.png como fondo y fuentes.
-Update(): ENTER o click -> ResetGame() y vuelve a MenuState.
-Render(): fondo + "GAME OVER" + mensaje + puntaje final + instruccion.
+14.6 DefeatState
+-----------------
+Derrota (castillo sin vida o boss que llega). Opciones:
+  R     : reintentar nivel  -> reinicia el nivel actual en planeacion,
+          conservando oro/cristales/arbol y restaurando la vida del castillo
+  ENTER : reiniciar partida -> ResetGame() y vuelve al menu
 
 
 --------------------------------------------------------------------------------
-13. ASSETS (Recursos Graficos)
---------------------------------------------------------------------------------
-
-Assets/
-  fondo.png                  : fondo del mapa de juego
-  MainMenu.png               : fondo del menu y pantalla de victoria
-  PantallaDerrota.png        : fondo de la pantalla de derrota
-  bullet.png                 : sprite de la flecha (5x21 px, apunta arriba)
-  image.png                  : imagen de referencia
-  powerup.png                : sprite de powerup (sin implementar)
-  Fonts/
-    pixel.ttf                : fuente pixel art usada en todo el juego
-  sprites/
-    archer_tower.png         : sprite de la torre arquera (128x128 px)
-    axe_tower.png            : sprite de la torre hachera (128x128 px)
-    castle.png               : sprite del castillo (192x192 px)
-    soldier.png              : sprite alternativo de soldado
-    drone.png                : sprite alternativo de drone
-  enemy/
-    0.png, 1.png, 2.png, 3.png  : 4 frames de animacion del enemigo
-
-
---------------------------------------------------------------------------------
-14. GAME LOOP (Program.cs)
+15. GAME LOOP (Program.cs)
 --------------------------------------------------------------------------------
 
   E.Initialize(1024, 768)
-  StateManager.ChangeState(new MenuState())
+  StateManager.ChangeState(new MenuState(stateManager))
 
   while (running):
-    dt = tiempo transcurrido desde el frame anterior (max 0.05s = 20fps min)
-
-    while (SDL_PollEvent):
-      if SDL_QUIT -> running = false
-
+    dt = tiempo desde el frame anterior (limitado a 0.05s)
+    while (SDL_PollEvent): if SDL_QUIT -> running = false
     if KEY_ESC -> running = false
-
     StateManager.Update(dt)
     StateManager.Render()
 
   SDL_Quit()
 
-El delta time esta limitado a 0.05s para evitar saltos de fisica
-en caso de que el sistema se congele momentaneamente.
+
+--------------------------------------------------------------------------------
+16. CONTROLES (resumen)
+--------------------------------------------------------------------------------
+
+MENU:        ENTER / Click  -> iniciar partida
+PLANNING:    Flechas mover | Q/E/3 elegir torre | R rotar mago |
+             ENTER colocar | ESPACIO comenzar | ESC salir
+COMBAT:      P pausa/reanudar | ESC salir
+SKILLTREE:   Flechas mover | ENTER comprar | ESPACIO continuar |
+             R repetir nivel | B nivel anterior  (R/B solo al fin de nivel)
+VICTORIA:    ENTER / Click -> menu
+DERROTA:     R reintentar nivel | ENTER reiniciar partida
 
 
 --------------------------------------------------------------------------------
-15. CONTROLES
+17. BALANCE DE JUEGO
 --------------------------------------------------------------------------------
 
-MENU:
-  ENTER / Click izquierdo  : iniciar partida
+Torres (stats base; las mejoras se suman por tipo):
+  Arquero  | Rango 200px | Dano 20 | Cadencia 1.5/s | Proyectil (homing)
+  Hachero  | Rango 80px  | Dano 50 | Cadencia 0.5/s | Area 60px + animacion
+  Mago     | Rango 192px | Dano 8/tick | Haz 3 tiles | ciclo 1.5s on/1.0s off
+  Bonos por nivel de mejora: +10 dano, +30 rango, +0.3 cadencia
 
-PLANNING (Colocacion de torres):
-  Flechas arriba/abajo/izq/der : mover cursor por el mapa
-  Q                            : seleccionar Torre Arquera  (costo: 50)
-  E                            : seleccionar Torre Hachera  (costo: 75)
-  ENTER                        : colocar torre en la casilla del cursor
-  ESPACIO                      : comenzar la oleada de combate
-  ESC                          : salir del juego
+Cantidad de torres por ronda (se resetean cada ronda):
+  Arquero: desbloqueado de entrada (2 por ronda tras ResetGame)
+  Hachero / Mago: 0 hasta desbloquearlos en el arbol (dan 1 al desbloquear)
+  +1 por cada nodo de cantidad comprado
 
-COMBAT:
-  ESC : salir del juego
+Enemigos (vida base, antes del multiplicador de dificultad):
+  Soldado    | HP 200  | Vel 60  | Oro 2  | Cristal 10%
+  Drone      | HP 100  | Vel 102 | Oro 3  | Cristal 25%
+  Mega Tanque| HP 600  | Vel 40  | Oro 8  | Cristal 40%
+  Boss       | HP 3000 | Vel 30  | Oro 50 | Cristal 100%  (llegar = derrota)
 
-VICTORIA / DERROTA:
-  ENTER / Click izquierdo : volver al menu principal
+Dificultad por ronda:
+  Cantidad de enemigos = 8 + (Nivel-1)*4 + (Ronda-1)*2
+  Multiplicador de vida = 1 + (Nivel-1)*0.25 + (Ronda-1)*0.10
+  Intervalo entre spawns: 2.5 s
+  MegaTank: probabilidad (Nivel-1)*0.12 por spawn
+  Boss: como ultimo enemigo de la 3a ronda de cada nivel
 
-
---------------------------------------------------------------------------------
-16. BALANCE DE JUEGO
---------------------------------------------------------------------------------
-
-Torres:
-  Arquera  | Costo: 50  | Rango: 200px | Dano: 20  | Cadencia: 1.5/s | Proyectil: si
-  Hachera  | Costo: 75  | Rango: 80px  | Dano: 50  | Cadencia: 0.5/s | Area: 60px
-
-Enemigos:
-  Soldado  | HP: 100 | Vel: 60px/s  | Recompensa: 10 monedas
-  Drone    | HP: 60  | Vel: 102px/s | Recompensa: 15 monedas
-
-Oleadas:
-  - 8 enemigos por oleada
-  - 1 Drone cada 3 spawns (indices 2, 5, 8)
-  - Intervalo entre spawns: 2.5 segundos
-  - Total de oleadas: 3
+Estructura de la partida:
+  3 rondas por nivel | 5 niveles | completar el nivel 5 = Victoria
 
 Castillo:
-  - Resiste 3 impactos antes de caer (Defeat)
-  - Cada enemigo que llega al final cuenta como 1 impacto
+  Vida inicial 3 (MaxHits). Se restaura al maximo al empezar cada ronda.
+  Cada enemigo normal que llega resta 1 vida; el boss causa derrota directa.
+  La vida maxima sube con el nodo "Vida Castillo" del arbol.
 
 Economia:
-  - Monedas iniciales: 100
-  - Cada kill suma monedas al saldo y al puntaje acumulado
-  - Las monedas no se resetean entre oleadas (se acumulan)
+  - Oro: lo sueltan todos los enemigos al morir.
+  - Cristales: con probabilidad propia de cada enemigo al morir.
+  - Oro y cristales no se resetean entre rondas (se acumulan).
+  - El arbol persiste toda la partida; se reinicia solo con ResetGame.
 
 
 --------------------------------------------------------------------------------
-17. ESTADOS FUTUROS / PENDIENTES
+18. ASSETS (Recursos Graficos)
 --------------------------------------------------------------------------------
 
-SkillTree:
-  El enum GameState.SkillTree ya existe y la transicion esta preparada.
-  Falta implementar la pantalla con opciones de mejora entre oleadas.
-  Flujo previsto: Combat -> SkillTree -> Planning -> Combat
+Assets/
+  fondo.png                  : fondo del mapa de juego
+  MainMenu.png               : fondo del menu y de la victoria
+  PantallaDerrota.png        : fondo de la derrota
+  bullet.png                 : sprite de la flecha
+  Fonts/pixel.ttf            : fuente pixel art
+  sprites/
+    archer_tower.png         : torre arquera (128x128)
+    axe_tower.png            : torre hachera (128x128)
+    castle.png               : castillo (192x192)
+    soldier.png, drone.png   : sprites alternativos
+  TankEnemy/0..3.png         : frames del soldado
+  FastEnemy/0..3.png         : frames del drone
 
-Assets sin usar:
-  powerup.png     : preparado para sistema de powerups
-  sprites/soldier.png, sprites/drone.png : sprites alternativos de enemigos
+Assets OPCIONALES (si no existen, se usa un respaldo y el juego no crashea):
+  sprites/mage_tower.png         : torre de mago (si falta usa el arquero)
+  sprites/fire.png               : haz de fuego (si falta, rectangulo naranja)
+  sprites/axe_attack_0..2.png    : animacion de golpe del hachero
+  MegaTank/0..3.png              : frames del mega tanque (si falta usa tank)
+  Boss/0..3.png                  : frames del boss (si falta usa drone)
+  skills/base.png, dano.png, rango.png, torre.png, cadencia.png, mago.png
+                                 : octagonos de los nodos del arbol
+  skills/fondo_mejoras.png       : fondo de la pantalla del arbol
+
+
+--------------------------------------------------------------------------------
+19. NOTAS DE DISENO / AJUSTABLES
+--------------------------------------------------------------------------------
+
+  - La vida del castillo se restaura al maximo al empezar cada ronda.
+  - "Reintentar" en la derrota conserva oro/cristales/arbol (reinicia solo
+    el nivel, no la partida).
+  - Las mejoras de stat aplican a las torres nuevas (no retroactivo a las ya
+    colocadas; igual las torres se resetean cada ronda).
+  - La pausa esta solo en combate (es donde corre el tiempo).
+  - Numeros de balance (chances de cristal, costos del arbol, escalado,
+    cantidades base) son faciles de ajustar en GameManager, SkillTree y las
+    clases de cada entidad.
 
 
 ================================================================================

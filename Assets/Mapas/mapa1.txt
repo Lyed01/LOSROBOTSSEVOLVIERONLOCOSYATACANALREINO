@@ -1,0 +1,13 @@
+; Mapa 1 - 1 salida de enemigos. Editable: las lineas con ';' se ignoran.
+; . = construible   # = camino   1/2 = salida de enemigos   C = castillo
+; Los corredores deben ser de 1 tile de ancho (si ensanchas un tramo el camino
+; puede "cortar camino"). La grilla es de 16 columnas x 9 filas.
+................
+...####....####C
+...#..#....#....
+...#..#.#######.
+1###..#.#..#..#.
+......#.#..#..#.
+....###.#..#..#.
+....#...#..####.
+....#####.......

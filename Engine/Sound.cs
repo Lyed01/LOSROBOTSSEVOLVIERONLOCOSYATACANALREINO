@@ -45,5 +45,17 @@ namespace ProyectoSDL2.Engine
             SDL_mixer.Mix_HaltMusic();
         }
 
+        // Detiene la música actual (sin necesitar una instancia concreta).
+        public static void DetenerMusica()
+        {
+            SDL_mixer.Mix_HaltMusic();
+        }
+
+        // Fija el volumen de la música (0..128).
+        public static void Volumen(int v)
+        {
+            SDL_mixer.Mix_VolumeMusic(v);
+        }
+
     }
 }

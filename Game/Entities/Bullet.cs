@@ -1,26 +1,35 @@
 using ProyectoSDL2.Engine;
 using ProyectoSDL2.Game;
+using ProyectoSDL2.Game.Pooling;
 using SDL2;
 using System;
 
 namespace ProyectoSDL2.Game.Entities
 {
-    public class Bullet
+    // Proyectil de la torre arquera (homing: recalcula la direccion al objetivo
+    // cada frame). Es POOLEABLE: el GestorDeBalas lo obtiene y lo devuelve a un
+    // Pool<Bullet> en lugar de crearlo/destruirlo en cada disparo.
+    public class Bullet : IPoolable
     {
         public Vector2 Position;
-        public bool IsAlive = true;
+        public bool IsAlive { get; private set; }
 
-        private readonly Enemy _target;
-        private readonly int   _damage;
-        private readonly Image _sprite;
-        private Vector2        _dir;
+        private Enemy   _target;
+        private int     _damage;
+        private Image   _sprite;
+        private Vector2 _dir;
 
         private const float Speed     = 700f;
         private const int   HitRadius = 20;
         private const int   W         = 7;
         private const int   H         = 28;
 
-        public Bullet(Vector2 startPos, Enemy target, int damage, Image sprite)
+        // Constructor vacio requerido por el Pool<Bullet> (restriccion new()).
+        public Bullet() { }
+
+        // Inicializa/reinicializa la bala con los datos del disparo. Se llama
+        // justo despues de obtenerla del pool, reemplazando al viejo constructor.
+        public void Configure(Vector2 startPos, Enemy target, int damage, Image sprite)
         {
             Position = startPos;
             _target  = target;
@@ -32,11 +41,15 @@ namespace ProyectoSDL2.Game.Entities
             _dir = new Vector2(dx, dy).Normalized();
         }
 
+        // ── IPoolable ─────────────────────────────────────────────────────────
+        public void AlObtener()  { IsAlive = true; }
+        public void AlDevolver() { IsAlive = false; _target = null; }
+
         public void Update(float dt)
         {
             if (!IsAlive) return;
 
-            if (_target.IsAlive)
+            if (_target != null && _target.IsAlive)
             {
                 float dx = _target.Position.X - Position.X;
                 float dy = _target.Position.Y - Position.Y;
@@ -45,7 +58,7 @@ namespace ProyectoSDL2.Game.Entities
 
             Position = Position + _dir * Speed * dt;
 
-            if (_target.IsAlive && Vector2.Distance(Position, _target.Position) < HitRadius)
+            if (_target != null && _target.IsAlive && Vector2.Distance(Position, _target.Position) < HitRadius)
             {
                 _target.TakeDamage(_damage);
                 IsAlive = false;

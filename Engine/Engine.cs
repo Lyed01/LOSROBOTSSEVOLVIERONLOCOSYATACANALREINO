@@ -17,7 +17,6 @@ namespace ProyectoSDL2.Engine
             IntPtr font = f.pointer;
             SDL.SDL_Color textColor = new SDL.SDL_Color { r = r, g = g, b = b, a = 255 };
 
-            // Renderiza el texto en una superficie
             IntPtr textSurface = SDL_ttf.TTF_RenderText_Solid(font, text, textColor);
             if (textSurface == IntPtr.Zero)
             {
@@ -25,7 +24,6 @@ namespace ProyectoSDL2.Engine
                 return;
             }
 
-            // Convierte la superficie en una textura
             IntPtr textTexture = SDL.SDL_CreateTextureFromSurface(Engine.renderer, textSurface);
             SDL.SDL_FreeSurface(textSurface);
             if (textTexture == IntPtr.Zero)
@@ -99,6 +97,14 @@ namespace ProyectoSDL2.Engine
             return new Image(imagePath);
         }
 
+        // Carga la imagen solo si el archivo existe; si no, devuelve null.
+        // Sirve para sprites opcionales (placeholders) sin cerrar el juego.
+        public static Image LoadImageSafe(string imagePath)
+        {
+            if (!System.IO.File.Exists(imagePath)) return null;
+            return new Image(imagePath);
+        }
+
 
         private static List<SDL.SDL_Event> eventQueue = new List<SDL.SDL_Event>();
 
@@ -149,10 +155,14 @@ namespace ProyectoSDL2.Engine
             return click;
         }
 
-        public static void Initialize(int w = 1024, int h = 768)
+        // w, h          : tamaño FISICO de la ventana (px reales en pantalla)
+        // logicalW/H    : tamaño LOGICO en el que se dibuja el juego. SDL escala
+        //                 automaticamente todo el render de coordenadas logicas a
+        //                 la ventana fisica. Si es 0, no se aplica escalado.
+        public static void Initialize(int w = 1024, int h = 768, int logicalW = 0, int logicalH = 0)
         {
             // Initilizes SDL.
-            if (SDL.SDL_Init(SDL.SDL_INIT_VIDEO) < 0)
+            if (SDL.SDL_Init(SDL.SDL_INIT_VIDEO | SDL.SDL_INIT_AUDIO) < 0)
             {
                 Console.WriteLine($"There was an issue initilizing SDL. {SDL.SDL_GetError()}");
             }
@@ -176,6 +186,15 @@ namespace ProyectoSDL2.Engine
                 Console.WriteLine($"There was an issue creating the renderer. {SDL.SDL_GetError()}");
             }
 
+            // Escalado logico: el juego se dibuja en coordenadas logicalW x logicalH
+            // y SDL lo estira a la ventana fisica (w x h). Asi se agranda la ventana
+            // sin tocar posiciones, waypoints ni el HUD. Como ambos son 4:3 no hay
+            // barras negras (el escalado es uniforme).
+            if (logicalW > 0 && logicalH > 0)
+            {
+                SDL.SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
+            }
+
             // Initilizes SDL_image for use with png files.
             if (SDL_image.IMG_Init(SDL_image.IMG_InitFlags.IMG_INIT_PNG) == 0)
             {
@@ -188,11 +207,14 @@ namespace ProyectoSDL2.Engine
                 Console.WriteLine("Error al inicializar SDL_ttf: " + SDL.SDL_GetError());
                 return;
             }
-            // Initializes audio mixer
+            // Initializes audio mixer (con soporte de MP3 para la musica)
+            SDL_mixer.Mix_Init(SDL_mixer.MIX_InitFlags.MIX_INIT_MP3);
             if (SDL_mixer.Mix_OpenAudio(44100, SDL.AUDIO_S16SYS, 2, 2048) == -1)
             {
                 Console.WriteLine("Error al inicializar SDL_mixer: " + SDL.SDL_GetError());
             }
+            // Volumen de la musica de fondo (0..128).
+            SDL_mixer.Mix_VolumeMusic(64);
         }
 
         public static float Radiands(int angle)

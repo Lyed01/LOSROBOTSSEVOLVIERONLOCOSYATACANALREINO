@@ -6,6 +6,8 @@ namespace ProyectoSDL2.Engine
     public class Image
     {
         public IntPtr Pointer { get; private set; }
+        public int    Width   { get; private set; }   // resolucion nativa del sprite
+        public int    Height  { get; private set; }
 
         public Image(string imagePath)
         {
@@ -20,6 +22,9 @@ namespace ProyectoSDL2.Engine
                 Console.WriteLine("Imagen inexistente: {0}", imagePath);
                 Environment.Exit(4);
             }
+            SDL.SDL_QueryTexture(Pointer, out _, out _, out int w, out int h);
+            Width  = w;
+            Height = h;
         }
     }
 }

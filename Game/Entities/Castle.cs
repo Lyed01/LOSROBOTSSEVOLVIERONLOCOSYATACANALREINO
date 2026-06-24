@@ -27,7 +27,7 @@ namespace ProyectoSDL2.Game.Entities
         public void Render()
         {
             SDL.SDL_Rect dest = new SDL.SDL_Rect { x = X, y = Y, w = 192, h = 192 };
-            SDL.SDL_RenderCopy(Engine.Engine.renderer, _sprite.Pointer, IntPtr.Zero, ref dest);
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, _sprite.Pointer, IntPtr.Zero, ref dest); 
         }
     }
 }

@@ -15,12 +15,35 @@ namespace ProyectoSDL2.Game.Entities
         public int     Height = 48;
 
         // ── IDamageable ────────────────────────────────────────────────────────
-        public int  Health  { get; protected set; }
-        public bool IsAlive { get; protected set; } = true;
+        public int  Health    { get; protected set; }
+        public int  MaxHealth { get; protected set; }
+        public bool IsAlive   { get; protected set; } = true;
 
         // ── Stats ──────────────────────────────────────────────────────────────
-        public float Velocidad      { get; protected set; } = 60f;
-        public int   MonedasAlMorir { get; protected set; } = 10;
+        public float Velocidad        { get; protected set; } = 60f;
+        public int   MonedasAlMorir   { get; protected set; } = 10;
+
+        // Enemigo aereo: el hachero (golpe a ras del suelo) y el mago (haz) no lo
+        // alcanzan; solo lo daña el arquero. Lo activan las subclases voladoras.
+        public bool  Aereo            { get; protected set; } = false;
+        public float CristalChance    { get; protected set; } = 0f;   // 0 a 1
+        public int   CristalesAlMorir { get; protected set; } = 1;
+
+        // Random compartido para los drops
+        private static Random _random = new Random();
+
+        // ── Ralentizacion (mago) ───────────────────────────────────────────────
+        // Multiplicador temporal de velocidad (1 = sin efecto). Se refresca con
+        // cada tick del haz del mago y se descuenta en Update.
+        private float _slowFactor = 1f;
+        private float _slowTimer  = 0f;
+
+        // Aplica/renueva una ralentizacion. factor < 1 frena; duracion en segundos.
+        public void AplicarRalentizacion(float factor, float duracion)
+        {
+            _slowFactor = factor;
+            _slowTimer  = duracion;
+        }
 
         // ── Waypoints ──────────────────────────────────────────────────────────
         protected List<Vector2> waypoints;
@@ -47,6 +70,20 @@ namespace ProyectoSDL2.Game.Entities
                 Position = waypoints[0];
         }
 
+        // Multiplica la vida del enemigo segun la dificultad de la ronda.
+        // Tambien fija la vida maxima para la barra de vida.
+        public void EscalarVida(float multiplicador)
+        {
+            Health    = (int)(Health * multiplicador);
+            MaxHealth = Health;
+        }
+
+        // Multiplica la velocidad del enemigo segun la dificultad de la ronda.
+        public void EscalarVelocidad(float multiplicador)
+        {
+            Velocidad *= multiplicador;
+        }
+
         // ── IDamageable ────────────────────────────────────────────────────────
         public void TakeDamage(int amount)
         {
@@ -58,6 +95,10 @@ namespace ProyectoSDL2.Game.Entities
                 IsAlive = false;
                 OnDied?.Invoke();
                 GameManager.Instance.EnemyDied(MonedasAlMorir);
+
+                // Drop de cristales segun la chance del enemigo
+                if (_random.NextDouble() < CristalChance)
+                    GameManager.Instance.AddCristales(CristalesAlMorir);
             }
         }
 
@@ -77,9 +118,16 @@ namespace ProyectoSDL2.Game.Entities
         {
             if (!IsAlive || waypointIndex >= waypoints.Count) return;
 
+            // Descontar la ralentizacion activa
+            if (_slowTimer > 0f)
+            {
+                _slowTimer -= dt;
+                if (_slowTimer <= 0f) _slowFactor = 1f;
+            }
+
             Vector2 target = waypoints[waypointIndex];
             Vector2 dir    = (target - Position).Normalized();
-            Position = Position + dir * Velocidad * dt;
+            Position = Position + dir * (Velocidad * _slowFactor) * dt;
 
             if (Vector2.Distance(Position, target) < WAYPOINT_THRESHOLD)
             {
@@ -89,25 +137,61 @@ namespace ProyectoSDL2.Game.Entities
                 if (waypointIndex >= waypoints.Count)
                 {
                     IsAlive = false;
-                    GameManager.Instance.TakeCastleHit();
+                    LlegarAlCastillo();
                 }
             }
 
             UpdateAnimation(dt);
         }
 
+        // Que pasa cuando el enemigo llega al castillo. Por defecto resta un golpe;
+        // el boss lo sobreescribe para causar derrota directa.
+        protected virtual void LlegarAlCastillo()
+        {
+            GameManager.Instance.TakeCastleHit();
+        }
+
+        // Escala de pixel comun a TODOS los enemigos. Cada sprite se dibuja segun
+        // su resolucion nativa por este mismo factor, asi el "pixel" mide igual en
+        // todos (los de mas resolucion se ven naturalmente mas grandes) y no se
+        // distorsiona el aspecto al no forzar un cuadrado fijo.
+        protected const float ESCALA_PX = 2.2f;
+
         // ── Render ────────────────────────────────────────────────────────────
         public virtual void Render()
         {
             if (!IsAlive) return;
-            SDL.SDL_Rect dest = new SDL.SDL_Rect
+
+            Image f = spriteSheet[frameActual];
+            int w  = (int)(f.Width  * ESCALA_PX);
+            int h  = (int)(f.Height * ESCALA_PX);
+            int cx = (int)Position.X + 32;   // centro de la antigua caja 64x64
+            int cy = (int)Position.Y + 32;
+            int rx = cx - w / 2;
+            int ry = cy - h / 2;
+
+            SDL.SDL_Rect dest = new SDL.SDL_Rect { x = rx, y = ry, w = w, h = h };
+            SDL.SDL_RenderCopy(Engine.Engine.renderer, f.Pointer, IntPtr.Zero, ref dest);
+
+            // Barra de vida centrada arriba del sprite
+            if (MaxHealth > 0)
             {
-                x = (int)Position.X,
-                y = (int)Position.Y,
-                w = 64,
-                h = 64
-            };
-            SDL.SDL_RenderCopy(Engine.Engine.renderer, spriteSheet[frameActual].Pointer, IntPtr.Zero, ref dest);
+                int barW = 40;
+                int barH = 5;
+                int bx   = cx - barW / 2;
+                int by   = ry - 8;
+
+                // Fondo rojo (vida perdida)
+                SDL.SDL_SetRenderDrawColor(Engine.Engine.renderer, 180, 40, 40, 255);
+                SDL.SDL_Rect fondo = new SDL.SDL_Rect { x = bx, y = by, w = barW, h = barH };
+                SDL.SDL_RenderFillRect(Engine.Engine.renderer, ref fondo);
+
+                // Vida actual (verde)
+                int vidaW = (int)(barW * (Health / (float)MaxHealth));
+                SDL.SDL_SetRenderDrawColor(Engine.Engine.renderer, 60, 200, 80, 255);
+                SDL.SDL_Rect vida = new SDL.SDL_Rect { x = bx, y = by, w = vidaW, h = barH };
+                SDL.SDL_RenderFillRect(Engine.Engine.renderer, ref vida);
+            }
         }
 
         // ── Colisión AABB ─────────────────────────────────────────────────────

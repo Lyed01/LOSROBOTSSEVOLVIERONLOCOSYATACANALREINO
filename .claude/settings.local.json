@@ -14,7 +14,25 @@
       "Bash(dotnet build *)",
       "Bash(Select-String -Pattern \"error|Error|warning NU|Compilación\")",
       "Bash(dotnet run *)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(Set-Location \"C:/Users/Casto/Desktop/LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO\"; Add-Type -AssemblyName System.Drawing; Add-Type -AssemblyName System.Windows.Forms; $p = Start-Process -FilePath \"bin/Debug/net9.0/ProyectoSDL2.exe\" -PassThru; Start-Sleep -Seconds 3; $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap\\($bounds.Width, $bounds.Height\\); $g = [System.Drawing.Graphics]::FromImage\\($bmp\\); $g.CopyFromScreen\\($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size\\); $bmp.Save\\(\"$PWD/screenshot.png\"\\); $g.Dispose\\(\\); $bmp.Dispose\\(\\); if \\(-not $p.HasExited\\) { Stop-Process -Id $p.Id -Force }; \"Screenshot guardado: $\\($bounds.Width\\)x$\\($bounds.Height\\)\")",
+      "Bash(find bin *)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; foreach \\($f in @\\(\"Assets/PantallaFondoMenuMejoras.png\",\"Assets/menuMejora.png\",\"Assets/skills/fondo_mejoras.png\"\\)\\) { $p = Join-Path \\(Get-Location\\) $f; if \\(Test-Path $p\\) { $img = [System.Drawing.Image]::FromFile\\($p\\); Write-Output \\(\"{0} -> {1}x{2}\" -f $f, $img.Width, $img.Height\\); $img.Dispose\\(\\) } else { Write-Output \\(\"{0} -> NO EXISTE\" -f $f\\) } })",
+      "Bash(python \"C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/trace.py\" \"Assets/Mapas\")",
+      "Bash(py \"C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/trace.py\" \"Assets/Mapas\")",
+      "Bash(cp C:/Users/Casto/Desktop/LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/Assets/Mapas/mapa*.txt C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/test/)",
+      "Bash(python - C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/test)",
+      "Bash(python C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/trace.py C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/test)",
+      "Bash(python - \"Assets/Mapas\")",
+      "Bash(tasklist)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $p = Join-Path \\(Get-Location\\) \"Assets/Mapas/MuroAbajoDelMapa.png\"; $img = [System.Drawing.Image]::FromFile\\($p\\); Write-Output \\(\"{0}x{1}\" -f $img.Width, $img.Height\\); $img.Dispose\\(\\))",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $p = Join-Path \\(Get-Location\\) \"Assets/Mapas/MuroAbajoDelMapa.png\"; $bmp = New-Object System.Drawing.Bitmap\\($p\\); $w=$bmp.Width; $h=$bmp.Height; $firstOpaque=-1; for\\($y=0;$y -lt $h;$y++\\){ for\\($x=0;$x -lt $w;$x++\\){ if\\($bmp.GetPixel\\($x,$y\\).A -gt 10\\){ $firstOpaque=$y; break } }; if\\($firstOpaque -ge 0\\){break} }; Write-Output \\(\"tamaño={0}x{1}  primera fila opaca={2}\" -f $w,$h,$firstOpaque\\); $bmp.Dispose\\(\\))",
+      "Bash(python -m pip install python-docx --quiet)",
+      "Bash(python -c \"import docx; print\\('docx OK', docx.__version__\\)\")",
+      "Bash(python \"C:/Users/Casto/AppData/Local/Temp/claude/C--Users-Casto-Desktop-LOSROBOTSSEVOLVIERONLOCOSYATACANALREINO/bace8152-52bd-4c15-b4c8-f72806ae0f64/scratchpad/gen_doc.py\" \"Documentacion_Tecnica_y_Flujo.docx\")",
+      "Bash(ls -la \"Documentacion_Tecnica_y_Flujo.docx\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

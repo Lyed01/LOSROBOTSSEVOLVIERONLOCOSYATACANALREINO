@@ -23,6 +23,9 @@ namespace ProyectoSDL2.Game.Entities
         protected float cadencia;
         protected float timerAtaque = 0f;
 
+        // Cuantos enemigos distintos ataca por golpe (mejora "Disparo Doble" = 2)
+        public int DisparosPorAtaque { get; set; } = 1;
+
         // ── Animación ─────────────────────────────────────────────────────────
         protected Image  spriteSheet;
         protected Image  _bulletImg;
@@ -41,6 +44,21 @@ namespace ProyectoSDL2.Game.Entities
             _bulletImg  = bulletImg;
         }
 
+        // ── Mejoras (arbol de habilidades) ────────────────────────────────────
+        // Indica si la torre recibio alguna mejora del arbol.
+        public bool Mejorada { get; private set; } = false;
+
+        // Suma bonificaciones a las estadisticas de la torre.
+        public void AplicarMejora(float danoBonus, float rangoBonus, float cadenciaBonus)
+        {
+            Dano     += danoBonus;
+            Rango    += rangoBonus;
+            cadencia += cadenciaBonus;
+
+            if (danoBonus > 0 || rangoBonus > 0 || cadenciaBonus > 0)
+                Mejorada = true;
+        }
+
         // ── IAttacker ─────────────────────────────────────────────────────────
         public abstract void Attack();
 
@@ -56,13 +74,14 @@ namespace ProyectoSDL2.Game.Entities
         }
 
         // ── Update general ────────────────────────────────────────────────────
-        public virtual void Update(float dt, List<Enemy> enemies, List<Bullet> bullets)
+        public virtual void Update(float dt, List<Enemy> enemies, GestorDeBalas balas)
         {
             timerAtaque += dt;
             atacando     = false;
 
             if (timerAtaque >= 1f / cadencia)
             {
+                int disparos = 0;
                 foreach (var e in enemies)
                 {
                     if (!e.IsAlive) continue;
@@ -72,11 +91,15 @@ namespace ProyectoSDL2.Game.Entities
 
                     if (dist <= Rango)
                     {
-                        atacando    = true;
-                        timerAtaque = 0f;
-                        Attack();
-                        Shoot(e, bullets);
-                        break;
+                        if (disparos == 0)
+                        {
+                            atacando    = true;
+                            timerAtaque = 0f;
+                            Attack();
+                        }
+                        Shoot(e, balas);
+                        disparos++;
+                        if (disparos >= DisparosPorAtaque) break;   // hasta N enemigos distintos
                     }
                 }
             }
@@ -85,20 +108,24 @@ namespace ProyectoSDL2.Game.Entities
         }
 
         // Dispara una bala hacia el objetivo; las subclases pueden sobreescribir
-        protected virtual void Shoot(Enemy target, List<Bullet> bullets)
+        protected virtual void Shoot(Enemy target, GestorDeBalas balas)
         {
             if (_bulletImg == null) return;
             int cx = X + Map.TILE / 2;
-            int cy = Y + Map.TILE / 2 - 128;
-            bullets.Add(new Bullet(new Vector2(cx, cy), target, (int)Dano, _bulletImg));
+            int cy = Y + Map.TILE / 2 - 64;   // un tile mas abajo (antes -128)
+            balas.Disparar(new Vector2(cx, cy), target, (int)Dano, _bulletImg);
         }
+
+        // Cuanto se BAJA el sprite respecto al anclaje original (medio tile).
+        // Las subclases lo reutilizan para alinear sus efectos con la torre.
+        protected const int RENDER_BAJAR = Map.TILE / 2;
 
         // ── Render ────────────────────────────────────────────────────────────
         public virtual void Render()
         {
             int renderW = 128, renderH = 128;
             int renderX = X + (Map.TILE / 2) - (renderW / 2);
-            int renderY = Y + (Map.TILE / 2) - renderH;
+            int renderY = Y + (Map.TILE / 2) - renderH + RENDER_BAJAR;
             SDL.SDL_Rect dest = new SDL.SDL_Rect { x = renderX, y = renderY, w = renderW, h = renderH };
             SDL.SDL_RenderCopy(Engine.Engine.renderer, spriteSheet.Pointer, IntPtr.Zero, ref dest);
         }

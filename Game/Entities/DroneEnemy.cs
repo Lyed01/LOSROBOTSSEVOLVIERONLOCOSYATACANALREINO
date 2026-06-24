@@ -8,11 +8,14 @@ namespace ProyectoSDL2.Game.Entities
         public DroneEnemy(List<Vector2> waypoints, Image[] frames)
             : base(waypoints, frames)
         {
-            Health         = 100;
-            Velocidad      = 102f;
-            MonedasAlMorir = 3;
-            totalFrames    = 4;
-            intervalFrame  = 0.07f;
+            Health           = 100;
+            Velocidad        = 102f;
+            Aereo            = true;    // vuela: solo el arquero puede dañarlo
+            MonedasAlMorir   = 3;
+            CristalChance    = 0.25f;   // 25% de soltar cristal
+            CristalesAlMorir = 1;
+            totalFrames      = 4;
+            intervalFrame    = 0.07f;
         }
     }
 }
